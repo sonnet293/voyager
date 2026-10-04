@@ -545,6 +545,32 @@ function typeLogLine(text, onDone) {
   typeNext();
 }
 
+let lastStepKind = null;
+
+// 피격 한 번의 정보 (배경 터미널용). 상성/급소는 이 피격 뒤에 이어지는 로그 줄에서 찾는다.
+function describeImpact(step) {
+  const before = shownPokemon[step.side];
+  const following = [];
+  for (const s of boardQueue) {
+    if (s.kind === "hit") break;
+    if (s.kind === "log") following.push(s.text);
+  }
+  const text = following.join("\n");
+  const effect = /효과가 없는/.test(text) ? "none"
+    : /효과가 굉장했다/.test(text) ? "super"
+    : /효과가 별로인/.test(text) ? "weak"
+    : "normal";
+  return {
+    hpBefore: before?.hp ?? step.pkmn.hp,
+    hpAfter: step.pkmn.hp,
+    maxHp: step.pkmn.maxHp || 1,
+    hidden: step.side === "enemy", // 상대 HP 숫자는 화면에도 숨기므로 퍼센트만
+    effect,
+    crit: /급소에 맞았다/.test(text),
+    attacker: !!step.hasAttacker,
+  };
+}
+
 function processBoardQueue() {
   if (boardBusy) return;
   if (boardQueue.length === 0) {
@@ -554,6 +580,7 @@ function processBoardQueue() {
   boardBusy = true;
   const step = boardQueue.shift();
   const next = () => {
+    lastStepKind = step.kind;
     boardBusy = false;
     setTimeout(processBoardQueue, LOG_TYPE_GAP_MS);
   };
@@ -564,8 +591,12 @@ function processBoardQueue() {
   }
 
   if (step.kind === "hit") {
+    // 배경 터미널(battleBg.js)에 공격/피격 로그 출력. 연속 공격은 첫 타에만 공격 로그
+    if (step.hasAttacker && lastStepKind !== "hit") document.dispatchEvent(new Event("battle:attack"));
+    const impact = describeImpact(step);
     // 로그가 다 보인 뒤 잠깐 텀을 두고 나서야 shake/blink 연출이 시작되도록
     setTimeout(() => {
+      document.dispatchEvent(new CustomEvent("battle:impact", { detail: impact }));
       const atkSide = step.side === "mine" ? "enemy" : "mine";
       const playEffect = step.hasAttacker ? triggerAttackEffect(atkSide, step.side) : triggerBlink(step.side);
       playEffect.then(() => {

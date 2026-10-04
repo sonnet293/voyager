@@ -14,7 +14,7 @@ body {
 
 body {
     font-family: "Mona12", sans-serif;
-    background: #D6F0FF;
+    background: #000;
     height: auto;
     min-height: 100vh;
     display: flex;
@@ -23,6 +23,8 @@ body {
 }
 
 .main {
+    position: relative;
+    z-index: 1; /* 배경(.bb) 위에 */
     background: #fff;
     width: 960px;
     max-width: 98vw;
@@ -578,4 +580,90 @@ body {
     min-width: 32px;
     text-align: right;
     font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================
+   배경 — 우주정거장 모자이크 + 배경 터미널 (js/battleBg.js가 만듦)
+   ========================================================== */
+.bb {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.bb-mosaic {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    filter: brightness(0.42) saturate(0.8) contrast(1.1);
+    opacity: 0;
+    transition: opacity 1.2s ease;
+}
+.bb.ready .bb-mosaic { opacity: 1; }
+
+.bb-glass {
+    position: absolute;
+    inset: 0;
+    background:
+        repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px),
+        linear-gradient(112deg, transparent 20%, rgba(255, 255, 255, 0.04) 26%, transparent 32%),
+        radial-gradient(ellipse at 50% 45%, transparent 30%, rgba(0, 0, 0, 0.8) 100%);
+}
+
+/* 피격 순간: 번쩍 + 살짝 흔들림 */
+.bb.bb-hit .bb-mosaic { animation: bb-hit 0.35s ease-out; }
+@keyframes bb-hit {
+    0% { filter: brightness(1.1) saturate(1.6) hue-rotate(-25deg) contrast(1.3); transform: translate(-6px, 2px); }
+    40% { transform: translate(5px, -2px); }
+    100% { filter: brightness(0.42) saturate(0.8) contrast(1.1); transform: none; }
+}
+
+.bb-term {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 14px clamp(12px, 3vw, 28px);
+    font: 400 11px / 14px "JetBrains Mono", "Nanum Gothic Coding", ui-monospace, Menlo, Consolas, monospace;
+    white-space: pre;
+    color: rgba(237, 237, 237, 0.34);
+    text-shadow: 0 0 0.4em rgba(255, 255, 255, 0.2);
+}
+.bb-head { flex: none; margin-bottom: 8px; color: rgba(237, 237, 237, 0.55); }
+.bb-stream {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end; /* 새 줄은 아래에서, 넘친 줄은 위로 밀려남 */
+    min-height: 0;
+    overflow: hidden;
+}
+.bb-stream > div { min-height: 14px; }
+.bb-stream > div:last-child::after { content: "_"; animation: bb-blink 1s steps(1) infinite; }
+.bb-warn { color: rgba(255, 176, 0, 0.55); }
+.bb-noise { color: rgba(237, 237, 237, 0.2); }
+.bb-hot { color: rgba(255, 255, 255, 0.7); }
+.bb-impact { color: #ffb000; text-shadow: 0 0 0.5em rgba(255, 176, 0, 0.55); font-weight: 700; }
+
+@keyframes bb-blink { 50% { opacity: 0; } }
+
+@media (max-width: 600px) {
+    .bb-term { font-size: 9px; line-height: 12px; }
+    .bb-stream > div { min-height: 12px; }
+}
+
+/* 공격/피격 로그가 쾅 찍힐 때 배경 터미널 흔들림 */
+.bb.bb-slam .bb-term { animation: bb-slam 0.28s ease-out; }
+@keyframes bb-slam {
+    0% { transform: translate(0, -5px); }
+    20% { transform: translate(-4px, 3px); }
+    40% { transform: translate(4px, -2px); }
+    60% { transform: translate(-2px, 1px); }
+    80% { transform: translate(1px, 0); }
+    100% { transform: none; }
 }
