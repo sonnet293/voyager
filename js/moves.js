@@ -135,7 +135,7 @@ export const MOVES = {
                     weatherAlwaysHit: ["비"] },
   "전기쇼크":     { power: 30, type: "전기", accuracy: 100, alwaysHit: false, effect: { chance: 0.1, status: "마비" } },
   "전기자석파":   { power: 0,  type: "전기", accuracy: 90,  alwaysHit: false, targetSelf: false,
-                    effect: { chance: 1, status: "마비" } },
+                    effect: { chance: 1, status: "마비" }, typeImmune: true },
   "볼부비부비":   { power: 30, type: "전기", accuracy: 100, alwaysHit: false, targetSelf: false,
                     effect: { chance: 1, status: "마비" } },
   "전자포":       { power: 60, type: "전기", accuracy: 50,  alwaysHit: false, targetSelf: false,

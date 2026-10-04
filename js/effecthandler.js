@@ -36,6 +36,8 @@ function hasType(pokemon, typeName) {
 function isImmuneToStatus(pokemon, statusName) {
   if (statusName === "독") return hasType(pokemon, "독") || hasType(pokemon, "강철");
   if (statusName === "화상") return hasType(pokemon, "불");
+  if (statusName === "마비") return hasType(pokemon, "전기");
+  if (statusName === "얼음") return hasType(pokemon, "얼음");
   return false;
 }
 
@@ -61,7 +63,7 @@ export function applyStatus(pokemon, statusName, currentTurn) {
   const name = pokemon.name ?? "포켓몬";
   if (!STATUS_LIST.includes(statusName)) return { pokemon, applied: false, reason: null, message: null };
   if (pokemon.status) {
-    return { pokemon, applied: false, reason: "already", message: `${name}${josa(name, "은는")} 이미 ${statusName} 상태다!` };
+    return { pokemon, applied: false, reason: "already", message: `${name}${josa(name, "은는")} 이미 ${pokemon.status} 상태다!` };
   }
   if (isImmuneToStatus(pokemon, statusName)) {
     return { pokemon, applied: false, reason: "immune", message: `${name}${josa(name, "은는")} ${statusName}에 걸리지 않는다!` };

@@ -909,6 +909,7 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
 
         let updatedDefender = { ...defender };
         moveConnected = typeMult > 0;
+        const isDamaging = moveData.power > 0;
 
         // 깨트리기: 공격이 맞으면 데미지 계산 전에 상대의 빛의장막/리플렉터를 깨뜨림 (타입상 효과가 없으면 깨지 못함)
         if (moveData.breakBarrier && updatedDefender.screen && typeMult > 0) {
@@ -1049,8 +1050,29 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
           if (weatherResult.message) log.push(weatherResult.message);
         }
 
+        // 불꽃세례 등(effect.thawEnemy): 얼어 있는 상대를 맞히면 얼음이 녹음 (화상 부여 판정보다 먼저)
+        if (isDamaging && typeMult > 0 && moveData.effect?.thawEnemy && updatedDefender.hp > 0 && updatedDefender.status === "얼음") {
+          updatedDefender = { ...updatedDefender, status: null, statusData: {} };
+          log.push(`${defenderName}의 얼음이 녹았다!`);
+          events.push({ logIndex: log.length - 1, type: "status", side: oppKey, status: null });
+        }
+
         // 상태이상 / 상태변화 부여 시도
-        if (moveData.effect && Math.random() < moveData.effect.chance) {
+        // - 공격기의 부가효과: 타입상 효과가 없거나 상대가 쓰러졌으면 발동하지 않고, 실패해도(면역/이미 걸림) 메시지 없음
+        // - 변화기(위력 0): 실패 사유를 메시지로 알려줌
+        //   · typeImmune(전기자석파): 타입상 효과가 없으면 실패
+        //   · poisonPowder(가루 기술): 풀 타입에게는 효과 없음
+        let effectBlocked = false;
+        if (moveData.effect && (moveData.effect.status || moveData.effect.triAttack || moveData.effect.volatile)) {
+          if (isDamaging) {
+            effectBlocked = typeMult === 0 || updatedDefender.hp <= 0;
+          } else if ((moveData.typeImmune && typeMult === 0) || (moveData.poisonPowder && pokemonTypes(updatedDefender).includes("풀"))) {
+            effectBlocked = true;
+            log.push(`${defenderName}에게는 효과가 없는 듯하다...`);
+          }
+        }
+
+        if (moveData.effect && !effectBlocked && Math.random() < moveData.effect.chance) {
           // 트라이어택(effect.triAttack): 마비/화상/얼음 중 랜덤 하나
           const statusName = moveData.effect.triAttack
             ? TRI_ATTACK_STATUSES[Math.floor(Math.random() * TRI_ATTACK_STATUSES.length)]
@@ -1061,7 +1083,7 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
             } else {
               const statusResult = applyStatus(updatedDefender, statusName, currentTurn);
               updatedDefender = statusResult.pokemon;
-              if (statusResult.message) log.push(statusResult.message);
+              if (statusResult.message && (statusResult.applied || !isDamaging)) log.push(statusResult.message);
               // 상태이상이 걸린 그 로그 줄에서 바로 이름 옆 [상태] 표시를 갱신하도록 연출 이벤트를 남김
               if (statusResult.applied) {
                 events.push({ logIndex: log.length - 1, type: "status", side: oppKey, status: updatedDefender.status });
@@ -1071,7 +1093,7 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
             const volName = moveData.effect.volatile;
             const dn = updatedDefender.name ?? "포켓몬";
             if (updatedDefender.volatiles?.[volName]) {
-              log.push(`${dn}${josa(dn, "은는")} 이미 ${volName} 상태다!`);
+              if (!isDamaging) log.push(`${dn}${josa(dn, "은는")} 이미 ${volName} 상태다!`);
             } else {
               updatedDefender = applyVolatile(updatedDefender, volName);
               log.push(`${dn}${josa(dn, "은는")} ${volName} 상태가 되었다!`);
@@ -1106,11 +1128,13 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
 
         // 랭크 변화. moves.js의 rank: { atk?, def?, spd?, targetAtk?, targetDef?, targetSpd?, turns, chance? }
         // 갱신 시점부터 turns만큼 다시 지속 시작.
-        if (moveData.rank && Math.random() < (moveData.rank.chance ?? 1)) {
+        // 공격기는 타입상 효과가 없으면 랭크 변화도 없고, 상대가 쓰러졌으면 상대 랭크 변화는 생략
+        if (moveData.rank && !(isDamaging && typeMult === 0) && Math.random() < (moveData.rank.chance ?? 1)) {
           const { turns } = moveData.rank;
           for (const [field, { self, stat }] of Object.entries(RANK_FIELD_MAP)) {
             const value = moveData.rank[field];
             if (!value) continue;
+            if (!self && isDamaging && updatedDefender.hp <= 0) continue;
 
             const targetKey = self ? myKey : oppKey;
             const targetRanks = targetKey === myKey ? myRanks : oppRanks;

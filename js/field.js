@@ -15,10 +15,6 @@ export function defaultField() {
   return { stealth_rock: false, toxic_spikes: false };
 }
 
-function hasType(pokemon, typeName) {
-  return pokemonTypes(pokemon).includes(typeName);
-}
-
 // 방어 포켓몬의 다중 타입에 대해 바위 타입 배율을 모두 곱함
 function getRockMultiplier(defenderTypes) {
   if (!Array.isArray(defenderTypes) || defenderTypes.length === 0) return 1;
@@ -74,12 +70,10 @@ export function applyHazardsOnSwitchIn(pokemon, field, currentTurn) {
   }
 
   if (field.toxic_spikes && updated.hp > 0) {
-    if (!hasType(updated, "독") && !hasType(updated, "강철")) {
-      const statusResult = applyStatus(updated, "독", currentTurn);
-      if (statusResult.applied) {
-        updated = statusResult.pokemon;
-        messages.push(statusResult.message);
-      }
+    const statusResult = applyStatus(updated, "독", currentTurn);
+    if (statusResult.applied) {
+      updated = statusResult.pokemon;
+      messages.push(statusResult.message);
     }
   }
 
