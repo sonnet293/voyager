@@ -42,7 +42,10 @@ function playBgm() {
   bgmAudio = new Audio(chosen)
   bgmAudio.loop   = true
   bgmAudio.volume = bgmVolume
-  bgmAudio.play().catch(() => {})
+  bgmAudio.play().catch(() => {
+    // 터치 없이 자동 시작된 경우(관전자) 브라우저가 자동재생을 막음 → 첫 터치 때 재생
+    document.addEventListener("pointerdown", () => bgmAudio.play().catch(() => {}), { once: true })
+  })
 }
 
 const overlay     = document.getElementById("intro-overlay")
@@ -88,7 +91,14 @@ onAuthStateChanged(auth, async (user) => {
     return
   }
 
-  bindTouch()
+  // 관전자는 터치 없이, 두 플레이어가 모두 터치하면 자동으로 인트로 시작
+  if (mySlot === "spectator") {
+    document.getElementById("touch-prompt").hidden = true
+    readyStatus.innerText = "플레이어를 기다리는 중..."
+    overlay.classList.add("waiting") // .ix-status는 waiting일 때만 보임
+  } else {
+    bindTouch()
+  }
   listenReady()
 })
 
@@ -134,6 +144,21 @@ function listenReady() {
     // 관전자는 두 플레이어가 모두 ready(또는 이미 배틀 시작)일 때 넘어감
     if (r1 && r2) opponentReady = true
     if (mySlot === "spectator" && room.intro_done) opponentReady = true
+
+    if (mySlot === "spectator" && !touched) {
+      // 인트로 시작 전에 배틀이 먼저 시작됨 → 스킵
+      if (room.intro_done) {
+        touched = true
+        skipIntro()
+        return
+      }
+      if (r1 && r2) {
+        touched = true
+        overlay.classList.remove("waiting")
+        onTouched()
+      }
+      return
+    }
 
     if (touched && !opponentReady) readyStatus.innerText = waitingText()
 
