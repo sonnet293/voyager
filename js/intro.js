@@ -77,16 +77,12 @@ onAuthStateChanged(auth, async (user) => {
   // 게임 시작 직후엔 먼저 포켓몬 선택 화면 (이미 끝났으면 바로 넘어감)
   await runSelection({ roomRef, myUid, spectator: isSpectatorParam })
 
-  if (isSpectatorParam) {
-    skipIntro()
-    return
-  }
-
   const snap = await getDoc(roomRef)
   const room = snap.data()
-  mySlot = room?.player1_uid === myUid ? "p1" : "p2"
+  if (isSpectatorParam) mySlot = "spectator"
+  else mySlot = room?.player1_uid === myUid ? "p1" : "p2"
 
-  // 인트로가 이미 끝난 상태 = 게임 도중 새로고침 → 인트로 스킵
+  // 인트로가 이미 끝난 상태 = 게임 도중 새로고침(관전자는 배틀 도중 입장) → 인트로 스킵
   if (room?.intro_done) {
     skipIntro()
     return
@@ -119,7 +115,8 @@ async function onTouched() {
   // VS 인트로 재생
   playVsIntro(room)
 
-  // Firestore에 내 ready 마킹
+  // Firestore에 내 ready 마킹 (관전자는 보기만 하고 배틀 시작 조건엔 끼지 않음)
+  if (mySlot === "spectator") return
   const field = mySlot === "p1" ? "intro_ready_p1" : "intro_ready_p2"
   await updateDoc(roomRef, { [field]: true })
 }
@@ -134,13 +131,19 @@ function listenReady() {
 
     // opponentReady는 한번 true되면 false로 안 돌아감
     // → intro_ready 필드가 나중에 초기화돼도 영향 없음
+    // 관전자는 두 플레이어가 모두 ready(또는 이미 배틀 시작)일 때 넘어감
     if (r1 && r2) opponentReady = true
+    if (mySlot === "spectator" && room.intro_done) opponentReady = true
 
-    if (touched && !opponentReady) readyStatus.innerText = "상대방을 기다리는 중..."
+    if (touched && !opponentReady) readyStatus.innerText = waitingText()
 
     // 내 인트로가 끝난 상태에서 상대방 ready 도착 → 배틀 시작
     if (opponentReady && introDone) startBattle()
   })
+}
+
+function waitingText() {
+  return mySlot === "spectator" ? "플레이어를 기다리는 중..." : "상대방을 기다리는 중..."
 }
 
 function flash() {
@@ -224,7 +227,7 @@ async function playVsIntro(room) {
   } else {
     // 상대방 아직 대기 중 → listenReady에서 처리
     overlay.classList.add("waiting")
-    readyStatus.innerText = "상대방을 기다리는 중..."
+    readyStatus.innerText = waitingText()
     fx.to(0.1, 600)
   }
 }
