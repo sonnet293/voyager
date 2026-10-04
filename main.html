@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Nanum+Gothic+Coding:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/main.css">
+    <title>VOYAGER // COMMAND CENTER</title>
+</head>
+<body class="station page-main" data-backdrop="img/spacestation.jpg">
+
+    <header class="topbar">
+        <a href="main.html" class="brand"><i class="led on"></i><span>PROJECT : VOYAGE</span><small class="hide-sm">// VOYAGER NODE 03</small></a>
+        <span class="grow"></span>
+        <span class="hide-sm">UTC <b data-clock>--:--:--</b></span>
+        <div class="topbar-actions">
+            <a href="profile.html" class="trainer-chip" title="Trainer Card">
+                <span class="initial avatar-box" id="trainer-initial">?</span>
+                <span class="label" id="trainer-name">Trainer</span>
+            </a>
+            <button type="button" class="text-btn" id="logoutBtn">[ DISCONNECT ]</button>
+        </div>
+    </header>
+
+    <main class="main-wrap">
+        <div class="main-head">
+            <div>
+                <p class="cmdline"><span class="dim">trainer@voyager:~$</span> chamber --list</p>
+                <span class="eyebrow">SIMULATION</span>
+                <h1>CHAMBER</h1>
+            </div>
+            <div id="room-summary" class="room-summary"></div>
+        </div>
+
+        <div id="room-grid" class="room-grid"></div>
+
+        <!--TODO: 나중에 푸터 추가-->
+    </main>
+
+    <div class="crt" aria-hidden="true"></div>
+
+    <script src="js/hud.js" defer></script>
+    <script src="js/nebula.js" defer></script>
+    <script type="module" src="js/main.js"></script>
+    
+</body>
+</html>
