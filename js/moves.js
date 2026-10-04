@@ -17,6 +17,7 @@ export const MOVES = {
   // ───── 노말 ─────
   "전광석화":   { power: 30, type: "노말", accuracy: 100, alwaysHit: true,  effect: null },
   "힘껏치기":   { power: 50, type: "노말", accuracy: 75,  alwaysHit: false, effect: null },
+  "테라버스트":   { power: 50, type: "노말", accuracy: 100,  alwaysHit: false, effect: null },
   "베어가르기": { power: 45, type: "노말", accuracy: 100, alwaysHit: false, effect: null, highCrit: true },
   "신속":       { power: 50, type: "노말", accuracy: 100, alwaysHit: true,  effect: null },
   "돌림노래":   { power: 40, type: "노말", accuracy: 100, alwaysHit: false, effect: null },
@@ -76,6 +77,7 @@ export const MOVES = {
   // ───── 불 ─────
   "화염바퀴":       { power: 40, type: "불", accuracy: 100, alwaysHit: false, effect: { chance: 0.1, status: "화상" } },
   "불꽃엄니":       { power: 40, type: "불", accuracy: 95, alwaysHit: false, effect: { chance: 0.1, status: "화상" } },
+  "불꽃엄니":       { power: 50, type: "불", accuracy: 100, alwaysHit: false, effect: { chance: 0.1, status: "화상" } },
   "블레이즈킥":     { power: 50, type: "불", accuracy: 90, alwaysHit: false, effect: { chance: 0.1, status: "화상" }, highCrit: true },
   "니트로차지":     { power: 40, type: "불", accuracy: 100, alwaysHit: false, effect: null, rank: { spd: 1, turns: 3 } },
   "불꽃세례":       { power: 30, type: "불", accuracy: 100, alwaysHit: false, effect: { chance: 0.1, status: "화상", thawEnemy: true } },
@@ -89,7 +91,7 @@ export const MOVES = {
   "불꽃춤":   { power: 50, type: "불", accuracy: 100, alwaysHit: false, effect: null,
                       rank: { chance:0.5, atk: 1, turns: 3 } },
   "불꽃튀기기":     { power: 40, type: "불", accuracy: 100, alwaysHit: false, effect: null, sparks: true  },
-  "화염방사":       { power: 50, type: "불", accuracy: 100, alwaysHit: false, effect: { chance: 0.1, status: "화상" } },
+  "화염방사":       { power: 60, type: "불", accuracy: 100, alwaysHit: false, effect: { chance: 0.1, status: "화상" } },
   "회오리불꽃":     { power: 35, type: "불", accuracy: 85,  alwaysHit: false, effect: null, trap: true },
   "열사의대지":     { power: 50, type: "땅", accuracy: 100, alwaysHit: false, effect: { chance: 0.3, status: "화상" } },
   "플레어드라이브": { power: 70, type: "불", accuracy: 100, alwaysHit: false, effect: { recoil: 0.33, chance: 0.1, status: "화상" } },
@@ -199,7 +201,7 @@ export const MOVES = {
   "기합구슬":             { power: 60, type: "격투", accuracy: 70, alwaysHit: false,  effect: null, rank: { chance: 0.1, targetDef: -1, turns: 2 }   },
   "깨트리기":           { power: 50, type: "격투", accuracy: 100, alwaysHit: false, effect: null, breakBarrier: true },
   "그로우펀치": { power: 30, type: "격투", accuracy: 100, alwaysHit: false, effect: null, rank: { atk: 1, turns: 2} },
-  "드레인펀치":         { power: 45, type: "격투", accuracy: 100, alwaysHit: false, effect: { drain: 0.15 } },
+  "드레인펀치":         { power: 50, type: "격투", accuracy: 100, alwaysHit: false, effect: { drain: 0.15 } },
   "바디프레스":         { power: 50, type: "격투", accuracy: 100, alwaysHit: false, effect: null, bodyPress: true },
   "무릎차기":           { power: 70, type: "격투", accuracy: 90,  alwaysHit: false, effect: null, jumpKick: true },
   "진공파":             { power: 35, type: "격투", accuracy: 100, alwaysHit: true,  effect: null },
@@ -270,6 +272,7 @@ export const MOVES = {
                   weatherAlwaysHit: ["비"], weatherAccuracy: { "쾌청": 50 } },
   "날개쉬기": { power: 0, type: "비행", accuracy: 100, alwaysHit: true,
               effect: { removeFlying: true, heal: 0.22 }, targetSelf: true },
+  "수다":   { power: 50, type: "비행", accuracy: 100, alwaysHit: false, effect: { chance: 1, volatile: "혼란" } },
 
   // ───── 에스퍼 ─────
   "사이코키네시스": { power: 50, type: "에스퍼", accuracy: 100, alwaysHit: false, effect: null,
