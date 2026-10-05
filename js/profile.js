@@ -107,7 +107,7 @@ function typeChips(types) {
 
 function renderEntrySlot(index, mon) {
   const slot = el("div", "slot entry");
-  slot.append(el("span", "slot-no", String(index + 1).padStart(2, "0")), el("span", "slot-badge", "엔트리"));
+  slot.append(el("span", "slot-no", String(index + 1).padStart(2, "0")), el("span", "slot-badge", "ENTRY"));
 
   // 카드 표시 이름: entry[i].cardName (Firestore 에서만 수정) > entry[i].name
   const name = (typeof mon.cardName === "string" && mon.cardName.trim()) || mon.name;
