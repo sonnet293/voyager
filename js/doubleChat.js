@@ -4,13 +4,14 @@
 //   - t2: B팀(player3·4) 채팅  — B팀과 관전자만 읽을 수 있음, B팀만 쓸 수 있음
 //   - spectator: 관전자 채팅   — 관전자만 읽고 쓸 수 있음
 // 실제 접근 제한은 firestore.rules가 강제하고, 이 파일은 내 자리에 맞는 채널만 구독한다.
-// 지난 게임의 메시지는 gameId(game_started_at)로 걸러서 보여주지 않는다.
+// 지난 게임의 메시지는 gameId(game_started_at)로 걸러서 읽지 않는다.
 import { auth, db } from "./firebase.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import {
   doc,
   collection,
   query,
+  where,
   orderBy,
   limitToLast,
   addDoc,
@@ -124,14 +125,25 @@ function calcRole(room) {
 // 플레이어: 자기 팀 채널만 / 관전자: 세 채널 모두 읽고 관전자 채널에 씀
 const readableChannels = (r) => (r === "spectator" ? ["t1", "t2", "spectator"] : r ? [r] : []);
 
+// 구독 쿼리가 걸러 읽는 게임. 게임이 바뀌면 모든 채널을 새 gameId로 다시 구독한다.
+let subsGameId;
+
 function resubscribe() {
   const want = new Set(readableChannels(role));
+  const gameChanged = subsGameId !== gameId;
   for (const [ch, unsub] of subs) {
-    if (!want.has(ch)) { unsub(); subs.delete(ch); messages.delete(ch); }
+    if (gameChanged || !want.has(ch)) { unsub(); subs.delete(ch); messages.delete(ch); }
   }
+  subsGameId = gameId;
   for (const ch of want) {
     if (subs.has(ch)) continue;
-    const q = query(collection(roomRef, "chats", ch, "messages"), orderBy("createdAt"), limitToLast(MAX_SHOWN));
+    // 지난 게임 메시지는 서버에서 걸러서 읽기 횟수를 아낀다 (색인: gameId 오름차순 + createdAt 내림차순)
+    const q = query(
+      collection(roomRef, "chats", ch, "messages"),
+      where("gameId", "==", gameId),
+      orderBy("createdAt"),
+      limitToLast(MAX_SHOWN)
+    );
     const unsub = onSnapshot(
       q,
       (snap) => {
