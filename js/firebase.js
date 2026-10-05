@@ -4,12 +4,13 @@ import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-aut
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyC7CIJ7TwwP-MSWLqEXWUgUMpsu6QG9vpg",
-  authDomain: "voyage-e1ada.firebaseapp.com",
-  projectId: "voyage-e1ada",
-  storageBucket: "voyage-e1ada.firebasestorage.app",
-  messagingSenderId: "533786107578",
-  appId: "1:533786107578:web:1c7cf33451e457d0926c83"
+  apiKey: "AIzaSyDDdSa8i3ZXu3tCJaHzdN0L16-A5Ez58mE",
+  authDomain: "voyage-55f62.firebaseapp.com",
+  projectId: "voyage-55f62",
+  storageBucket: "voyage-55f62.firebasestorage.app",
+  messagingSenderId: "394527359794",
+  appId: "1:394527359794:web:f29daaff5c19c182588d2b",
+  measurementId: "G-S790TL5507"
 };
 
 const app = initializeApp(firebaseConfig);
