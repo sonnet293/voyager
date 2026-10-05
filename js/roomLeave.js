@@ -11,9 +11,8 @@ export async function vacateSeat(roomRef, room, uid) {
 
     const spectators = room.spectators ?? [];
     const spectatorNames = room.spectator_names ?? [];
-    const slot = room.player1_uid === uid ? "player1"
-        : room.player2_uid === uid ? "player2"
-        : null;
+    // 싱글은 player1~2, 더블은 player1~4 (싱글 방 문서엔 player3·4 필드가 없어서 걸리지 않음)
+    const slot = ["player1", "player2", "player3", "player4"].find((s) => room[`${s}_uid`] === uid) ?? null;
 
     if (slot) {
         if (spectators.length > 0) {

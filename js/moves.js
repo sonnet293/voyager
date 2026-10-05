@@ -82,7 +82,7 @@ export const MOVES = {
   "니트로차지":     { power: 40, type: "불", accuracy: 100, alwaysHit: false, effect: null, rank: { spd: 1, turns: 3 } },
   "불꽃세례":       { power: 30, type: "불", accuracy: 100, alwaysHit: false, effect: { chance: 0.1, status: "화상", thawEnemy: true } },
   "도깨비불":       { power: 0,  type: "불", accuracy: 85,  alwaysHit: false, targetSelf: false, effect: { chance: 1, status: "화상" } },
-  "열풍":           { power: 50, type: "불", accuracy: 90, alwaysHit: false, effect: { chance: 0.1, status: "화상" }, aoeEnemy: true },
+  "열풍":           { power: 60, type: "불", accuracy: 90, alwaysHit: false, effect: { chance: 0.1, status: "화상" }, aoeEnemy: true },
   "불대문자":       { power: 60, type: "불", accuracy: 85,  alwaysHit: false, effect: null },
   "매지컬플레임":   { power: 45, type: "불", accuracy: 100, alwaysHit: false, effect: null,
                       rank: { targetAtk: -1, turns: 2 } },
@@ -119,7 +119,7 @@ export const MOVES = {
   "폭포오르기": { power: 50, type: "물", accuracy: 100, alwaysHit: false, effect: { chance: 0.2, volatile: "풀죽음" } },
   "아쿠아브레이크":{ power: 50, type: "물", accuracy: 100, alwaysHit: false, effect: null,
                     rank: { chance: 0.2, targetDef: -1, turns: 2 } },
-  "탁류":       { power: 50, type: "물", accuracy: 85,  alwaysHit: false, targetSelf: false, effect: null,
+  "탁류":       { power: 60, type: "물", accuracy: 85,  alwaysHit: false, targetSelf: false, effect: null,
                   rank: { chance: 0.3, targetSpd: -1, turns: 3 }, aoeEnemy: true },
   "퀵턴": { power: 40, type: "물", accuracy: 100, alwaysHit: false,
           effect: null, uTurn: true },
@@ -194,6 +194,8 @@ export const MOVES = {
   "눈싸라기":       { power: 30, type: "얼음", accuracy: 100, alwaysHit: false, effect: { chance: 0.1, status: "얼음" }, aoeEnemy: true },
   "눈사태":         { power: 40, type: "얼음", accuracy: 100, alwaysHit: false, effect: null, avalanche: true },
   "흑안개":         { power: 0,  type: "얼음", accuracy: 100, alwaysHit: true,  effect: null, haze: true, targetSelf: true },
+  "고드름침":   { power: 15, type: "얼음", accuracy: 100, alwaysHit: false, effect: null,
+                  multiHit: { min: 2, max: 5 } },
 
   // ───── 격투 ─────
   "인파이트":           { power: 60, type: "격투", accuracy: 100, alwaysHit: false, targetSelf: true, effect: null,
@@ -232,7 +234,7 @@ export const MOVES = {
                   rapidSpin: true, rank: { spd: 1, turns: 3 }, effect: { chance: 1, status: "독" } },
 
   // ───── 땅 ─────
-  "지진":       { power: 50, type: "땅", accuracy: 100, alwaysHit: false, effect: null, aoe: true },
+  "지진":       { power: 50, type: "땅", accuracy: 100, alwaysHit: false, effect: null, aoe: true, hitsUnderground: true },
   "땅고르기":   { power: 40, type: "땅", accuracy: 100, alwaysHit: false, effect: null,
                   rank: { targetSpd: -1, turns: 3 }, aoe: true },
   "모래뿌리기": { power: 0,  type: "땅", accuracy: 100, alwaysHit: false, targetSelf: false, effect: null,
@@ -244,7 +246,7 @@ export const MOVES = {
   "대지의힘":   { power: 50, type: "땅", accuracy: 100, alwaysHit: false, effect: null,
                   rank: { chance: 0.1, targetDef: -1, turns: 2 } },
   "드릴라이너": { power: 50, type: "땅", accuracy: 95,  alwaysHit: false, effect: null, highCrit: true },
-  "구멍파기":   { power: 50, type: "땅", accuracy: 1,   alwaysHit: false, effect: null, dig: true },
+  "구멍파기":   { power: 50, type: "땅", accuracy: 100, alwaysHit: false, effect: null, dig: true },
 
   // ───── 바위 ─────
   "스톤에지":   { power: 40, type: "바위", accuracy: 80,  alwaysHit: false, effect: null },
@@ -319,6 +321,8 @@ export const MOVES = {
   "시저크로스": { power: 50, type: "벌레", accuracy: 100, alwaysHit: false,  effect: null },
   "엄습하는일격":   { power: 40,  type: "벌레", accuracy: 90, alwaysHit: false,  effect: null,
                   rank: { targetAtk: -1, turns: 2 } },
+  "바늘미사일":   { power: 15, type: "벌레", accuracy: 95, alwaysHit: false, effect: null,
+                  multiHit: { min: 2, max: 5 } },
   // ───── 고스트 ─────
   "섀도볼":     { power: 50, type: "고스트", accuracy: 100, alwaysHit: false, effect: null,
                   rank: { chance: 0.2, targetDef: -1, turns: 3 } },
@@ -393,7 +397,7 @@ export const MOVES = {
   "불릿펀치":   { power: 40, type: "강철", accuracy: 100, alwaysHit: false, effect: null },
   "플래시캐논": { power: 40, type: "강철", accuracy: 100, alwaysHit: true,  effect: null },
   "철제광선":   { power: 90, type: "강철", accuracy: 95,  alwaysHit: false, effect: { recoilMaxHp: 0.5 } },
-  "강철날개":   { power: 50, type: "강철", accuracy: 100, alwaysHit: false,
+  "강철날개":   { power: 50, type: "강철", accuracy: 90, alwaysHit: false,
                   effect: { chance: 0.1, def: 1, turns: 3 } },
   "금속음":     { power: 0,  type: "강철", accuracy: 85,  alwaysHit: false, effect: null,
                   rank: { targetDef: -2, turns: 2 } },
@@ -456,10 +460,6 @@ export const MOVES = {
                   multiHit: { min: 2, max: 5, fixedDamage: 10 } },
   "드래곤애로": { power: 1,  type: "드래곤", accuracy: 85,  alwaysHit: false, effect: null,
                   multiHit: { min: 2, max: 2, fixedDamage: 30 } },
-  "고드름침": { power: 1,  type: "얼음", accuracy: 100,  alwaysHit: false, effect: null,
-                  multiHit: { min: 2, max: 5, fixedDamage: 10 } },
-  "바늘미사일": { power: 1,  type: "벌레", accuracy: 95,  alwaysHit: false, effect: null,
-                  multiHit: { min: 2, max: 5, fixedDamage: 6 } },
   "사슬묶기":   { power: 0,  type: "노말", accuracy: 90,  alwaysHit: false, effect: null,
                   chainBind: true, targetSelf: false },
   "드래곤테일": { power: 40, type: "드래곤", accuracy: 90, alwaysHit: false, effect: null, roar: true },

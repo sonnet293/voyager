@@ -198,6 +198,22 @@ const CONDITIONAL_POWER_MULT = 1.5;
 // 객기: 자신이 이 상태이상일 때 위력 증가
 const GUTS_STATUSES = ["독", "마비", "화상"];
 
+// 충전: 사용한 다음 라운드(자신의 다음 행동)에 쓰는 전기 기술의 위력 배율. charge: { turn: 효과가 적용되는 라운드 }
+const CHARGE_POWER_MULT = 1.5;
+
+// 구멍파기: 땅속에 있는 포켓몬이 지진류(hitsUnderground)에 맞으면 최종 데미지 배율
+const UNDERGROUND_HIT_MULT = 2;
+
+// 구멍파기로 땅속에 있는 상대에게 이 기술이 닿는지
+function hitsUnderground(defender, moveData) {
+  return !!(defender?.ghostDive?.underground && moveData.hitsUnderground);
+}
+
+// 충전 효과를 받는 기술인지 (사용한 다음 라운드의 전기 공격 기술)
+function isCharged(attacker, moveData, currentTurn) {
+  return attacker?.charge?.turn === currentTurn && moveData.type === "전기";
+}
+
 // 아쿠아링: 라운드 종료마다 최대 체력 x 비율 회복
 const AQUA_RING_HEAL_RATIO = 1 / 16;
 
@@ -664,7 +680,7 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
   let defender = entries[oppKey][activeIdx[oppKey]];
   if (!attacker || !defender) return fail("포켓몬 없음");
 
-  // 고스트다이브로 사라진 상태면 어떤 버튼을 눌렀든 그 기술로 강제 공격 (PP는 사라질 때 이미 소모)
+  // 고스트다이브/구멍파기로 사라진 상태면 어떤 버튼을 눌렀든 그 기술로 강제 공격 (PP는 사라질 때 이미 소모)
   const diving = attacker.ghostDive ?? null;
   if (diving) moveIdx = diving.moveIdx;
 
@@ -692,10 +708,10 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
     if (!Number.isInteger(uTurnIdx) || uTurnIdx === activeIdx[myKey] || !t || t.hp <= 0) return fail("유턴 교체 대상이 올바르지 않음");
   }
 
-  // PP 소모
+  // PP 소모. 충전 효과는 이번 행동으로 끝 (위력 판정은 행동 전 상태인 attacker로 함)
   const newMoves = [...attacker.moves];
   if (!diving) newMoves[moveIdx] = { ...moveSlot, pp: moveSlot.pp - 1 };
-  let currentAttacker = { ...attacker, moves: newMoves };
+  let currentAttacker = { ...attacker, moves: newMoves, charge: null };
   entries[myKey][activeIdx[myKey]] = currentAttacker;
 
   let myRanks = room[`${myKey}_ranks`] ?? defaultRanks();
@@ -758,12 +774,15 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
       log.push(`${faint.name}${josa(faint.name, "은는")} 쓰러졌다!`);
       directPendingSides.add(myKey);
     }
-  } else if (moveData.ghostDive && !diving) {
-    // 고스트다이브 1턴째: 공격하지 않고 사라짐. 다음 내 턴에 같은 기술로 강제 공격.
+  } else if ((moveData.ghostDive || moveData.dig) && !diving) {
+    // 고스트다이브/구멍파기 1턴째: 공격하지 않고 사라짐. 다음 내 턴에 같은 기술로 강제 공격.
+    // 구멍파기(underground)는 땅속에 있는 동안 지진류(hitsUnderground)에는 맞음
     const attackerName = currentAttacker.name ?? "포켓몬";
     log.push(`${attackerName}의 ${moveSlot.name}!`);
-    log.push(`${attackerName}${josa(attackerName, "은는")} 어디론가 사라졌다!`);
-    currentAttacker = { ...currentAttacker, ghostDive: { moveIdx } };
+    log.push(moveData.dig
+      ? `${attackerName}${josa(attackerName, "은는")} 땅속으로 파고들었다!`
+      : `${attackerName}${josa(attackerName, "은는")} 어디론가 사라졌다!`);
+    currentAttacker = { ...currentAttacker, ghostDive: { moveIdx, underground: !!moveData.dig } };
     entries[myKey][activeIdx[myKey]] = currentAttacker;
   } else if (moveData.spikyShield || moveData.defend) {
     // 방어류(니들가드/방어/판별): 상대의 다음 행동 하나에만 유지 (막으면 소모, 피격되지 않으면 사라짐).
@@ -901,8 +920,8 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
       update[`${myKey}_pending_switch`] = true;
       directPendingSides.add(myKey);
     }
-  } else if (defender.ghostDive && targetsOpponent(moveData)) {
-    // 상대가 고스트다이브로 사라져 있으면 상대를 노리는 기술은 반드시 빗나감
+  } else if (defender.ghostDive && targetsOpponent(moveData) && !hitsUnderground(defender, moveData)) {
+    // 상대가 고스트다이브/구멍파기로 사라져 있으면 상대를 노리는 기술은 반드시 빗나감 (땅속이면 지진류는 맞음)
     const attackerName = currentAttacker.name ?? "포켓몬";
     const defenderName = defender.name ?? "포켓몬";
     log.push(`${attackerName}의 ${moveSlot.name}!`);
@@ -953,6 +972,13 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
         moveConnected = typeMult > 0;
         const isDamaging = moveData.power > 0;
 
+        // 충전: 다음 라운드(자신의 다음 행동)에 쓰는 전기 기술의 위력 1.5배
+        if (moveData.charge) {
+          currentAttacker = { ...currentAttacker, charge: { turn: currentTurn + 1 } };
+          entries[myKey][activeIdx[myKey]] = currentAttacker;
+          log.push(`${attackerName}${josa(attackerName, "은는")} 몸에 전기를 모았다!`);
+        }
+
         // 깨트리기: 공격이 맞으면 데미지 계산 전에 상대의 빛의장막/리플렉터를 깨뜨림 (타입상 효과가 없으면 깨지 못함)
         if (moveData.breakBarrier && updatedDefender.screen && typeMult > 0) {
           const screenName = updatedDefender.screen.name;
@@ -976,6 +1002,8 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
           if (moveData.saltWater && defender.hp * 2 <= (defender.maxHp ?? defender.hp)) power = Math.round(power * CONDITIONAL_POWER_MULT);
           // 병상첨병: 상대가 상태이상이면 위력 1.5배
           if (moveData.sickPower && defender.status) power = Math.round(power * CONDITIONAL_POWER_MULT);
+          // 충전: 직전 라운드에 충전했으면 전기 기술 위력 1.5배
+          if (isCharged(attacker, moveData, currentTurn)) power = Math.round(power * CHARGE_POWER_MULT);
           // 연속자르기: 연속으로 맞힐 때마다 +10 (30 -> 40 -> 50, 최대 50)
           if (moveData.furyCutter) {
             power = Math.min(FURY_CUTTER_MAX_POWER, moveData.power + 10 * (attacker.furyCutter ?? 0));
@@ -991,6 +1019,7 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
             ? multiHit.min + Math.floor(Math.random() * (multiHit.max - multiHit.min + 1))
             : 1;
           const screenMult = updatedDefender.screen ? SCREEN_DAMAGE_MULT : 1; // 빛의장막/리플렉터
+          const undergroundMult = hitsUnderground(defender, moveData) ? UNDERGROUND_HIT_MULT : 1; // 땅속의 상대에게 지진류
           let newHp = updatedDefender.hp;
           let dmg = 0; // 이번 기술로 준 총 데미지
           let hits = 0;
@@ -1006,7 +1035,7 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
                 (power + atkStat * 4 + rollD10()) * dmgAtkMult * typeMult * stab * weatherMult -
                 defender.def * 3 * defMult;
               isCrit = rollCrit(attacker);
-              hitDmg = Math.max(0, Math.round(rawDamage * (isCrit ? 1.5 : 1) * screenMult));
+              hitDmg = Math.max(0, Math.round(rawDamage * (isCrit ? 1.5 : 1) * screenMult * undergroundMult));
             }
             newHp = Math.max(0, newHp - hitDmg);
             dmg += hitDmg;
@@ -1348,10 +1377,10 @@ function crashDamage(pokemon) {
   };
 }
 
-// 교체로 들어가는 포켓몬에게서 해제되는 상태 (방어류/빛의장막·리플렉터/신비의부적/연속자르기 누적/방어류 연속 사용 기록/도발/카운터용 피격 데미지/회오리불꽃류/아쿠아링/지옥찌르기/빗나감 기록/혼란·풀죽음)
+// 교체로 들어가는 포켓몬에게서 해제되는 상태 (방어류/빛의장막·리플렉터/신비의부적/연속자르기 누적/방어류 연속 사용 기록/도발/카운터용 피격 데미지/회오리불꽃류/아쿠아링/지옥찌르기/빗나감 기록/충전/혼란·풀죽음)
 function clearOnSwitchOut(pokemon) {
   const { "혼란": _confusion, "풀죽음": _flinch, ...volatiles } = pokemon.volatiles ?? {};
-  return { ...pokemon, guard: null, guardStreak: false, screen: null, amulet: null, furyCutter: 0, taunt: null, lastDamageTaken: 0, trap: null, aquaRing: false, throatChop: null, missedRound: null, volatiles };
+  return { ...pokemon, guard: null, guardStreak: false, screen: null, amulet: null, furyCutter: 0, taunt: null, lastDamageTaken: 0, trap: null, aquaRing: false, throatChop: null, missedRound: null, charge: null, volatiles };
 }
 
 // 교체 공통 처리(자발적 교체/강제 교체/유턴): 나가는 포켓몬 상태 정리 -> 내보내기 로그/연출 -> 장판 적용.
@@ -1405,7 +1434,7 @@ export function switchPokemon(room, myKey, targetIdx) {
 
   if (!target || target.hp <= 0) return fail("쓰러진 포켓몬"); // 쓰러진 포켓몬으론 못 나감
   if (!pendingSwitch && targetIdx === activeIdx[myKey]) return fail("이미 출전 중"); // 이미 나가 있는 포켓몬
-  if (!pendingSwitch && myArr[activeIdx[myKey]]?.ghostDive) return fail("고스트다이브 중에는 교체 불가");
+  if (!pendingSwitch && myArr[activeIdx[myKey]]?.ghostDive) return fail("사라진 상태(고스트다이브/구멍파기)에서는 교체 불가");
   const trap = myArr[activeIdx[myKey]]?.trap;
   if (!pendingSwitch && trap) return fail(`${trap.name}에 갇혀 있어 교체 불가`);
 
@@ -1510,6 +1539,10 @@ export {
   VENOM_SHOCK_MULT,
   CONDITIONAL_POWER_MULT,
   GUTS_STATUSES,
+  CHARGE_POWER_MULT,
+  UNDERGROUND_HIT_MULT,
+  hitsUnderground,
+  isCharged,
   AQUA_RING_HEAL_RATIO,
   THROAT_CHOP_TURNS,
   TRI_ATTACK_STATUSES,

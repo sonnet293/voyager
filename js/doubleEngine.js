@@ -61,6 +61,10 @@ import {
   VENOM_SHOCK_MULT,
   CONDITIONAL_POWER_MULT,
   GUTS_STATUSES,
+  CHARGE_POWER_MULT,
+  UNDERGROUND_HIT_MULT,
+  hitsUnderground,
+  isCharged,
   AQUA_RING_HEAL_RATIO,
   THROAT_CHOP_TURNS,
   TRI_ATTACK_STATUSES,
@@ -635,8 +639,8 @@ function hitOne(c, myKey, t, moveSlot, moveData, s) {
     }
     return { hit: false, missed: false, connected: false, dmg: 0 };
   }
-  // 고스트다이브로 사라진 상대
-  if (defender.ghostDive && targetsOpponent(moveData)) {
+  // 고스트다이브/구멍파기로 사라진 상대 (땅속이면 지진류는 맞음)
+  if (defender.ghostDive && targetsOpponent(moveData) && !hitsUnderground(defender, moveData)) {
     c.log.push(`${dn}에게는 맞지 않았다!`);
     return { hit: false, missed: true, connected: false, dmg: 0 };
   }
@@ -686,12 +690,14 @@ function hitOne(c, myKey, t, moveSlot, moveData, s) {
     if (moveData.guts && GUTS_STATUSES.includes(attacker.status)) power = Math.round(power * CONDITIONAL_POWER_MULT);
     if (moveData.saltWater && defender.hp * 2 <= (defender.maxHp ?? defender.hp)) power = Math.round(power * CONDITIONAL_POWER_MULT);
     if (moveData.sickPower && defender.status) power = Math.round(power * CONDITIONAL_POWER_MULT);
+    if (s.charged) power = Math.round(power * CHARGE_POWER_MULT);
     if (moveData.furyCutter) power = Math.min(FURY_CUTTER_MAX_POWER, moveData.power + 10 * (attacker.furyCutter ?? 0));
 
     const counterDmg = moveData.counter ? Math.round((attacker.lastDamageTaken ?? 0) * COUNTER_MULT) : null;
     const multiHit = moveData.multiHit;
     const hitCount = multiHit ? multiHit.min + Math.floor(Math.random() * (multiHit.max - multiHit.min + 1)) : 1;
     const screenMult = updated.screen ? SCREEN_DAMAGE_MULT : 1;
+    const undergroundMult = hitsUnderground(defender, moveData) ? UNDERGROUND_HIT_MULT : 1; // 땅속의 대상에게 지진류
     let newHp = updated.hp;
     let hits = 0;
     while (hits < hitCount && newHp > 0) {
@@ -706,7 +712,7 @@ function hitOne(c, myKey, t, moveSlot, moveData, s) {
           (power + atkStat * 4 + rollD10()) * dmgAtkMult * typeMult * stab * weatherMult -
           defender.def * 3 * defMult;
         isCrit = rollCrit(attacker);
-        hitDmg = Math.max(0, Math.round(rawDamage * (isCrit ? 1.5 : 1) * screenMult * spreadMult));
+        hitDmg = Math.max(0, Math.round(rawDamage * (isCrit ? 1.5 : 1) * screenMult * spreadMult * undergroundMult));
       }
       newHp = Math.max(0, newHp - hitDmg);
       dmg += hitDmg;
@@ -840,7 +846,8 @@ function applyRankChanges(c, rank, self, targetKey, isDamaging) {
 const hasSelfRank = (rank) => !!rank && Object.entries(RANK_FIELD_MAP).some(([f, { self }]) => self && rank[f]);
 
 // 일반 기술 판정 (대상 여럿이면 대상마다 hitOne). 반환: { targets, anyHit, anyConnected, allMissed }
-function performMove(c, myKey, moveSlot, moveData, chosenTarget, breaksProtection) {
+// charged: 직전 라운드에 충전한 상태로 쓰는 전기 기술인지
+function performMove(c, myKey, moveSlot, moveData, chosenTarget, breaksProtection, charged) {
   const attackerName = pname(active(c, myKey));
   c.log.push(`${attackerName}의 ${moveSlot.name}!`);
   const moveLogIndex = c.log.length - 1;
@@ -867,6 +874,7 @@ function performMove(c, myKey, moveSlot, moveData, chosenTarget, breaksProtectio
       spread: !!(moveData.aoe || moveData.aoeEnemy),
       moveLogIndex,
       breaksProtection,
+      charged,
     };
     let totalDmg = 0;
     let missed = 0;
@@ -931,6 +939,12 @@ function performMove(c, myKey, moveSlot, moveData, chosenTarget, breaksProtectio
     if (weatherResult.message) c.log.push(weatherResult.message);
   }
 
+  // 충전: 다음 라운드(자신의 다음 행동)에 쓰는 전기 기술의 위력 1.5배
+  if (moveData.charge) {
+    setActive(c, myKey, { ...active(c, myKey), charge: { turn: c.turn + 1 } });
+    c.log.push(`${attackerName}${josa(attackerName, "은는")} 몸에 전기를 모았다!`);
+  }
+
   // 자신 랭크 변화 (한 번만 판정)
   if (hasSelfRank(moveData.rank) && !(isDamaging && !res.anyConnected) && active(c, myKey).hp > 0 &&
       Math.random() < (moveData.rank.chance ?? 1)) {
@@ -981,10 +995,11 @@ export function useMove(room, myKey, moveIdx, targetKey = null, uTurnIdx = null)
     targetKey = attacker.lastHitBy;
   }
 
-  // PP 소모 + 방어류는 자신의 다음 행동이 오면 풀림
+  // PP 소모 + 방어류/충전은 자신의 다음 행동이 오면 풀림 (충전 위력 판정은 행동 전 상태로)
+  const charged = isCharged(attacker, moveData, c.turn);
   const newMoves = [...attacker.moves];
   if (!diving) newMoves[moveIdx] = { ...moveSlot, pp: moveSlot.pp - 1 };
-  let cur = { ...attacker, moves: newMoves, guard: null };
+  let cur = { ...attacker, moves: newMoves, guard: null, charge: null };
   setActive(c, myKey, cur);
 
   let guardSucceeded = false;
@@ -1017,10 +1032,13 @@ export function useMove(room, myKey, moveIdx, targetKey = null, uTurnIdx = null)
   const attackerName = pname(cur);
   if (blocked) {
     // 행동 저지 (혼란 자해로 쓰러졌으면 finish에서 처리)
-  } else if (moveData.ghostDive && !diving) {
+  } else if ((moveData.ghostDive || moveData.dig) && !diving) {
+    // 고스트다이브/구멍파기 1턴째: 사라졌다가 다음 행동 때 강제 공격. 구멍파기(underground)는 지진류에는 맞음
     c.log.push(`${attackerName}의 ${moveSlot.name}!`);
-    c.log.push(`${attackerName}${josa(attackerName, "은는")} 어디론가 사라졌다!`);
-    setActive(c, myKey, { ...cur, ghostDive: { moveIdx, target: targetKey ?? null } });
+    c.log.push(moveData.dig
+      ? `${attackerName}${josa(attackerName, "은는")} 땅속으로 파고들었다!`
+      : `${attackerName}${josa(attackerName, "은는")} 어디론가 사라졌다!`);
+    setActive(c, myKey, { ...cur, ghostDive: { moveIdx, target: targetKey ?? null, underground: !!moveData.dig } });
   } else if (moveData.spikyShield || moveData.defend) {
     // 방어류: 자신의 다음 행동 전까지 들어오는 기술을 막음. 직전 행동도 방어류 성공이었으면 성공률 감소
     c.log.push(`${attackerName}의 ${moveSlot.name}!`);
@@ -1113,7 +1131,7 @@ export function useMove(room, myKey, moveIdx, targetKey = null, uTurnIdx = null)
     c.log.push(`${attackerName}의 ${moveSlot.name}!`);
     c.log.push("그러나 실패했다!");
   } else {
-    const res = performMove(c, myKey, moveSlot, moveData, targetKey, breaksProtection);
+    const res = performMove(c, myKey, moveSlot, moveData, targetKey, breaksProtection, charged);
     targets = res.targets;
     connected = res.anyConnected;
     moveMissed = res.allMissed;
@@ -1166,7 +1184,7 @@ export function switchPokemon(room, myKey, targetIdx) {
 
   if (!target || target.hp <= 0) return fail("쓰러진 포켓몬");
   if (!pending && targetIdx === c.activeIdx[myKey]) return fail("이미 출전 중");
-  if (!pending && cur?.ghostDive) return fail("고스트다이브 중에는 교체 불가");
+  if (!pending && cur?.ghostDive) return fail("사라진 상태(고스트다이브/구멍파기)에서는 교체 불가");
   if (!pending && cur?.trap) return fail(`${cur.trap.name}에 갇혀 있어 교체 불가`);
 
   if (pending) c.pending[myKey] = false;
