@@ -35,9 +35,16 @@
             <div id="room-summary" class="room-summary"></div>
         </div>
 
-        <div id="room-grid" class="room-grid"></div>
+        <nav class="room-pager" aria-label="방 페이지">
+            <button type="button" id="pager-prev" class="pager-arrow" aria-label="이전 방 목록">&lt;</button>
+            <span id="pager-label" class="pager-label">SINGLE BATTLE</span>
+            <span id="pager-dots" class="pager-dots"></span>
+            <button type="button" id="pager-next" class="pager-arrow" aria-label="다음 방 목록">&gt;</button>
+        </nav>
 
-        <!--TODO: 나중에 푸터 추가-->
+        <!-- 방 3개씩 한 페이지. 옆으로 넘기면(스와이프/화살표) 다음 페이지 -->
+        <div id="room-grid" class="room-track"></div>
+
     </main>
 
     <div class="crt" aria-hidden="true"></div>

@@ -9,7 +9,7 @@ import {
   onSnapshot,
   deleteField,
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-import { roomInfo, roomStatus, roomBgStyle } from "./rooms.js";
+import { roomInfo, roomStatus, roomBgStyle, playerSlots } from "./rooms.js";
 import { vacateSeat } from "./roomLeave.js";
 import { fillAvatar } from "./avatar.js";
 import { syncPublicProfile } from "./publicProfile.js";
@@ -19,6 +19,10 @@ let myUid = null;
 let myNickname = null;
 let myProfileImage = null;
 let latestRoom = null;
+
+// 싱글: player1~2, 더블(2:2 팀전): player1~4 (1·2번 vs 3·4번)
+const PLAYER_SLOTS = playerSlots(ROOM_ID);
+const isPlayerSlot = (slot) => PLAYER_SLOTS.includes(slot);
 
 const info = roomInfo(ROOM_ID);
 if (info) {
@@ -37,16 +41,15 @@ const el = (tag, className, text) => {
 
 function calcMySlot(room) {
     if (!room || !myUid) return null;
-    if (room.player1_uid === myUid) return "player1";
-    if (room.player2_uid === myUid) return "player2";
+    const slot = PLAYER_SLOTS.find((s) => room[`${s}_uid`] === myUid);
+    if (slot) return slot;
     if ((room.spectators ?? []).includes(myUid)) return "spectator";
     return null;
 }
 
 function slotLabel(slot) {
-    if (slot === "player1") return "Player1";
-    if (slot === "player2") return "Player2";
-    return "관전자";
+    if (isPlayerSlot(slot)) return `Player${slot.slice(-1)}`;
+    return "OBSERVE";
 }
 
 onAuthStateChanged(auth, async (user) => {
@@ -78,10 +81,9 @@ async function joinRoom() {
         return;
     }
 
-    if (!room.player1_uid) {
-        await updateDoc(roomRef, { player1_uid: myUid, player1_name: myNickname });
-    } else if (!room.player2_uid) {
-        await updateDoc(roomRef, { player2_uid: myUid, player2_name: myNickname });
+    const emptySlot = PLAYER_SLOTS.find((s) => !room[`${s}_uid`]);
+    if (emptySlot) {
+        await updateDoc(roomRef, { [`${emptySlot}_uid`]: myUid, [`${emptySlot}_name`]: myNickname });
     } else {
         await joinAsSpectator(room);
     }
@@ -125,7 +127,7 @@ function listenRoom() {
 }
 
 function updateButtonsBySlot(room, mySlot) {
-    const isPlayer = mySlot === "player1" || mySlot === "player2";
+    const isPlayer = isPlayerSlot(mySlot);
 
     const readyBtn = document.getElementById("readyBtn");
     const leaveBtn = document.getElementById("leaveBtn");
@@ -152,23 +154,24 @@ function renderHint(room, mySlot) {
     const hintEl = document.getElementById("lobby-hint");
     if (!hintEl) return;
 
-    const isPlayer = mySlot === "player1" || mySlot === "player2";
-    const bothSeated = !!room.player1_uid && !!room.player2_uid;
-    const bothReady = !!room.player1_ready && !!room.player2_ready;
+    const isPlayer = isPlayerSlot(mySlot);
+    const allSeated = PLAYER_SLOTS.every((s) => !!room[`${s}_uid`]);
+    const allReady = PLAYER_SLOTS.every((s) => !!room[`${s}_ready`]);
+    const many = PLAYER_SLOTS.length > 2;
 
     hintEl.innerHTML = "";
     if (room.game_started) {
         hintEl.append("배틀 화면으로 이동하는 중…");
-    } else if (bothSeated && bothReady) {
-        hintEl.append(el("strong", null, "양쪽 모두 READY!"), " 곧 배틀이 시작됩니다.");
-    } else if (!bothSeated) {
-        hintEl.append("상대 트레이너를 기다리는 중입니다.");
+    } else if (allSeated && allReady) {
+        hintEl.append(el("strong", null, many ? "모두 READY!" : "양쪽 모두 READY!"), " 곧 배틀이 시작됩니다.");
+    } else if (!allSeated) {
+        hintEl.append(many ? "트레이너 네 명이 모이길 기다리는 중입니다." : "상대 트레이너를 기다리는 중입니다.");
     } else if (isPlayer && room[`${mySlot}_ready`]) {
-        hintEl.append("상대의 READY를 기다리는 중… 버튼을 다시 누르면 READY가 취소됩니다.");
+        hintEl.append(many ? "다른 트레이너의 READY를 기다리는 중… " : "상대의 READY를 기다리는 중… ", "버튼을 다시 누르면 READY가 취소됩니다.");
     } else if (isPlayer) {
         hintEl.append("준비가 되면 ", el("strong", null, "READY"), "를 눌러주세요.");
     } else {
-        hintEl.append("두 플레이어가 모두 READY하면 배틀이 시작됩니다.");
+        hintEl.append(many ? "플레이어가 모두 READY하면 배틀이 시작됩니다." : "플레이어가 모두 READY하면 배틀이 시작됩니다.");
     }
 }
 
@@ -210,8 +213,7 @@ function openTrainerCard(uid) {
 }
 
 function renderPlayers(room, mySlot) {
-    renderPlayerRow("player1", room, mySlot);
-    renderPlayerRow("player2", room, mySlot);
+    PLAYER_SLOTS.forEach((slot) => renderPlayerRow(slot, room, mySlot));
 }
 
 function renderPlayerRow(slot, room, mySlot) {
@@ -232,7 +234,7 @@ function renderPlayerRow(slot, room, mySlot) {
     const nameEl = el("strong", "player-name", uid ? (name ?? "-") : "EMPTY");
 
     card.append(
-        el("span", "player-slot", slot === "player1" ? "PLAYER 1" : "PLAYER 2"),
+        el("span", "player-slot", `PLAYER ${slot.slice(-1)}`),
         uid ? profileLink(uid, name, "profile-link", avatar, nameEl) : avatar,
     );
     if (!uid) card.append(nameEl);
@@ -262,7 +264,7 @@ function renderSpectators(room, mySlot) {
         return;
     }
 
-    const isPlayer = mySlot === "player1" || mySlot === "player2";
+    const isPlayer = isPlayerSlot(mySlot);
     const canRequest = isPlayer && !room.swap_request && !room.game_started;
 
     uids.forEach((uid, i) => {
@@ -406,7 +408,7 @@ function setupButtons() {
       const roomSnap = await getDoc(roomRef);
       const room = roomSnap.data();
       const mySlot = calcMySlot(room);
-      if ((mySlot !== "player1" && mySlot !== "player2") || room.game_started) return;
+      if (!isPlayerSlot(mySlot) || room.game_started) return;
       const key = `${mySlot}_ready`;
       await updateDoc(roomRef, { [key]: !room[key] });
     } finally {
@@ -419,7 +421,7 @@ function setupButtons() {
     const roomSnap = await getDoc(roomRef);
     const room = roomSnap.data();
     const mySlot = calcMySlot(room);
-    const isPlayer = mySlot === "player1" || mySlot === "player2";
+    const isPlayer = isPlayerSlot(mySlot);
 
     if (isPlayer && room.game_started) {
       return;

@@ -290,3 +290,31 @@ body.page-lobby { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
 @media (max-width: 360px) {
   .versus { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ── 더블배틀 대기실: 팀 A(1·2번) vs 팀 B(3·4번) ───────────────────────── */
+.versus.double .team-col {
+  display: grid;
+  align-content: start;
+  gap: clamp(10px, 1.6vw, 14px);
+  min-width: 0;
+}
+.team-tag {
+  color: var(--dim);
+  font-size: 0.7em;
+  letter-spacing: 0.3em;
+  text-align: center;
+}
+.team-tag::before { content: "// "; }
+.versus.double .player-card { min-height: 170px; padding: 34px 12px 16px; }
+.versus.double .player-avatar { width: clamp(56px, 10vw, 80px); font-size: 1.4em; }
+#player3 { animation-delay: 0.3s; }
+#player4 { animation-delay: 0.35s; }
+
+@media (max-width: 600px) {
+  .versus.double { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .versus.double .player-card { min-height: 150px; padding: 30px 8px 12px; }
+}
+
+@media (max-width: 360px) {
+  .versus.double { grid-template-columns: minmax(0, 1fr); }
+}

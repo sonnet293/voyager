@@ -1402,3 +1402,42 @@ export function leaveBattle(room, uid) {
 
   return ok(update);
 }
+
+// 더블배틀 엔진(js/doubleEngine.js)이 같은 규칙으로 판정하도록 공유하는 내부 헬퍼/상수
+export {
+  rollD10,
+  clampRank,
+  rankMultiplier,
+  getEffectiveRank,
+  getDefenderTypeMultiplier,
+  hasStab,
+  isAlwaysHit,
+  rollAccuracy,
+  healRatio,
+  rollEvasion,
+  rollCrit,
+  buildRankChangeMessage,
+  targetsOpponent,
+  futureSightDamage,
+  clearOnSwitchOut,
+  RANK_FIELD_MAP,
+  SOUND_MOVES,
+  FURY_CUTTER_MAX_POWER,
+  FURY_CUTTER_MAX_STACK,
+  SCREEN_TURNS,
+  SCREEN_DAMAGE_MULT,
+  COUNTER_MULT,
+  VENOM_SHOCK_MULT,
+  CONDITIONAL_POWER_MULT,
+  GUTS_STATUSES,
+  AQUA_RING_HEAL_RATIO,
+  THROAT_CHOP_TURNS,
+  TRI_ATTACK_STATUSES,
+  FUTURE_SIGHT_DELAY,
+  WISH_HEAL_RATIO,
+  TRAP_MIN_TURNS,
+  TRAP_MAX_TURNS,
+  TRAP_DAMAGE_RATIO,
+  GUARD_REPEAT_CHANCE,
+  TAUNT_TURNS,
+};

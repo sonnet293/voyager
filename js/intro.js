@@ -6,11 +6,23 @@ import { doc, getDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/fire
 import { runSelection } from "./select.js"
 import { createFx, spewLine, scramble } from "./introFx.js"
 
-const BGM_LIST = [
-  "../bgm/bgm1.mp3",
-  "../bgm/bgm2.mp3",
-  "../bgm/bgm3.mp3"
-]
+// 더블배틀 페이지(games/battleroom4~6.html)는 BATTLE_MODE = "double"을 선언한다
+const IS_DOUBLE = typeof BATTLE_MODE !== "undefined" && BATTLE_MODE === "double"
+
+// 인트로 터치/포켓몬 선택에 참여하는 자리 (p3 -> player3_uid, intro_ready_p3)
+const SIDES = IS_DOUBLE ? ["p1", "p2", "p3", "p4"] : ["p1", "p2"]
+
+const BGM_LIST = IS_DOUBLE
+  ? [
+    "../doubleBgm/bgm1.mp3",
+    "../doubleBgm/bgm2.mp3",
+    "../doubleBgm/bgm3.mp3"
+  ]
+  : [
+    "../bgm/bgm1.mp3",
+    "../bgm/bgm2.mp3",
+    "../bgm/bgm3.mp3"
+  ]
 
 export let bgmAudio = null
 
@@ -78,12 +90,12 @@ onAuthStateChanged(auth, async (user) => {
   myUid = user.uid
 
   // 게임 시작 직후엔 먼저 포켓몬 선택 화면 (이미 끝났으면 바로 넘어감)
-  await runSelection({ roomRef, myUid, spectator: isSpectatorParam })
+  await runSelection({ roomRef, myUid, spectator: isSpectatorParam, sides: SIDES })
 
   const snap = await getDoc(roomRef)
   const room = snap.data()
   if (isSpectatorParam) mySlot = "spectator"
-  else mySlot = room?.player1_uid === myUid ? "p1" : "p2"
+  else mySlot = SIDES.find((k) => room?.[`player${k.slice(1)}_uid`] === myUid) ?? "spectator"
 
   // 인트로가 이미 끝난 상태 = 게임 도중 새로고침(관전자는 배틀 도중 입장) → 인트로 스킵
   if (room?.intro_done) {
@@ -91,7 +103,7 @@ onAuthStateChanged(auth, async (user) => {
     return
   }
 
-  // 관전자는 터치 없이, 두 플레이어가 모두 터치하면 자동으로 인트로 시작
+  // 관전자는 터치 없이, 플레이어가 모두 터치하면 자동으로 인트로 시작
   if (mySlot === "spectator") {
     document.getElementById("touch-prompt").hidden = true
     readyStatus.innerText = "플레이어를 기다리는 중..."
@@ -127,8 +139,7 @@ async function onTouched() {
 
   // Firestore에 내 ready 마킹 (관전자는 보기만 하고 배틀 시작 조건엔 끼지 않음)
   if (mySlot === "spectator") return
-  const field = mySlot === "p1" ? "intro_ready_p1" : "intro_ready_p2"
-  await updateDoc(roomRef, { [field]: true })
+  await updateDoc(roomRef, { [`intro_ready_${mySlot}`]: true })
 }
 
 function listenReady() {
@@ -136,13 +147,12 @@ function listenReady() {
     const room = snap.data()
     if (!room) return
 
-    const r1 = !!room.intro_ready_p1
-    const r2 = !!room.intro_ready_p2
+    const allReady = SIDES.every((k) => !!room[`intro_ready_${k}`])
 
     // opponentReady는 한번 true되면 false로 안 돌아감
     // → intro_ready 필드가 나중에 초기화돼도 영향 없음
-    // 관전자는 두 플레이어가 모두 ready(또는 이미 배틀 시작)일 때 넘어감
-    if (r1 && r2) opponentReady = true
+    // 관전자는 플레이어가 모두 ready(또는 이미 배틀 시작)일 때 넘어감
+    if (allReady) opponentReady = true
     if (mySlot === "spectator" && room.intro_done) opponentReady = true
 
     if (mySlot === "spectator" && !touched) {
@@ -152,7 +162,7 @@ function listenReady() {
         skipIntro()
         return
       }
-      if (r1 && r2) {
+      if (allReady) {
         touched = true
         overlay.classList.remove("waiting")
         onTouched()
@@ -168,7 +178,8 @@ function listenReady() {
 }
 
 function waitingText() {
-  return mySlot === "spectator" ? "플레이어를 기다리는 중..." : "상대방을 기다리는 중..."
+  if (mySlot === "spectator") return "플레이어를 기다리는 중..."
+  return IS_DOUBLE ? "다른 플레이어를 기다리는 중..." : "상대방을 기다리는 중..."
 }
 
 function flash() {
@@ -228,11 +239,16 @@ async function playVsIntro(room) {
 
   const vsLeft  = document.getElementById("vs-left")
   const vsRight = document.getElementById("vs-right")
+  // 싱글: P1 vs P2 / 더블: (P1, P2) vs (P3, P4) — 이름 칸이 있는 만큼 채움
+  const vsName = (n) => (room?.[`player${n}_name`] ?? `PLAYER${n}`).toUpperCase()
+  const leftNames  = IS_DOUBLE ? [1, 2] : [1]
+  const rightNames = IS_DOUBLE ? [3, 4] : [2]
+  const nameEls = (side, i) => document.getElementById(i === 0 ? `vs-name-${side}` : `vs-name-${side}${i + 1}`)
   vsLeft.classList.add("show")
-  scramble(document.getElementById("vs-name-left"), (room?.player1_name ?? "PLAYER1").toUpperCase(), 600)
+  leftNames.forEach((n, i) => { const node = nameEls("left", i); if (node) scramble(node, vsName(n), 600) })
   await wait(140)
   vsRight.classList.add("show")
-  scramble(document.getElementById("vs-name-right"), (room?.player2_name ?? "PLAYER2").toUpperCase(), 600)
+  rightNames.forEach((n, i) => { const node = nameEls("right", i); if (node) scramble(node, vsName(n), 600) })
   await wait(260)
   document.getElementById("vs-label").classList.add("show")
   flash()
