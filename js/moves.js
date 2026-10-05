@@ -148,6 +148,7 @@ export const MOVES = {
                     rank: { targetSpd: -1, turns: 3 }, aoeEnemy: true },
   "볼트체인지":   { power: 40, type: "전기", accuracy: 100, alwaysHit: false, effect: null, uTurn: true },
   "찌리리따끔따끔":   { power: 50, type: "전기", accuracy: 100, alwaysHit: false, effect: { chance: 0.3, volatile: "풀죽음" } },
+  "와일드볼트":{ power: 60, type: "전기", accuracy: 100, alwaysHit: false, effect: { recoil: 0.25 } },
 
   // ───── 풀 ─────
   "에너지볼":       { power: 40, type: "풀", accuracy: 100, alwaysHit: false, effect: null,
