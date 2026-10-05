@@ -121,6 +121,13 @@ function getDefenderTypeMultiplier(moveType, defenderTypes) {
   return defenderTypes.reduce((mult, t) => mult * getTypeMultiplier(moveType, t), 1);
 }
 
+// 기술의 타입 상성 배율. 프리즈드라이(freezeDry)는 물 타입에게도 효과가 굉장함
+function moveTypeMultiplier(moveData, defender) {
+  const types = pokemonTypes(defender);
+  if (!moveData.freezeDry) return getDefenderTypeMultiplier(moveData.type, types);
+  return types.reduce((mult, t) => mult * (t === "물" ? FREEZE_DRY_WATER_MULT : getTypeMultiplier(moveData.type, t)), 1);
+}
+
 // 공격자 타입 배열에 기술 타입이 포함되어 있으면 자속 보정
 function hasStab(attackerTypes, moveType) {
   return Array.isArray(attackerTypes) && attackerTypes.includes(moveType);
@@ -169,6 +176,18 @@ const SCREEN_DAMAGE_MULT = 0.75;
 
 // 카운터: 직전에 받은 데미지(lastDamageTaken)에 곱하는 배율
 const COUNTER_MULT = 1.5;
+
+// 신비의부적: 상태이상에 걸리지 않는 기간 (빛의장막과 같은 방식으로 만료)
+const AMULET_TURNS = 5;
+
+// 무릎차기류(jumpKick): 빗나가면 자신의 최대 체력 x 비율 데미지
+const JUMP_KICK_CRASH_RATIO = 1 / 2;
+
+// 속임수(trickster): 자신 대신 상대의 공격력 x 배율로 계산
+const TRICKSTER_ATK_MULT = 0.7;
+
+// 프리즈드라이: 물 타입에 대한 배율 (약점과 같음)
+const FREEZE_DRY_WATER_MULT = 1.2;
 
 // 베놈쇼크: 독 상태인 상대에게 곱하는 위력 배율
 const VENOM_SHOCK_MULT = 1.5;
@@ -411,6 +430,15 @@ function buildTurnAdvanceUpdate(room, entries, activeIdx, currentTurn, log, even
     entries[side][activeIdx[side]] = { ...pkmn, screen: null };
     const n = pkmn.name ?? "포켓몬";
     log.push(`${n}의 ${pkmn.screen.name}${josa(pkmn.screen.name, "이가")} 사라졌다!`);
+  }
+
+  // 신비의부적 만료
+  for (const side of ["p1", "p2"]) {
+    const pkmn = entries[side][activeIdx[side]];
+    if (!pkmn?.amulet || currentTurn < pkmn.amulet.expireTurn) continue;
+    entries[side][activeIdx[side]] = { ...pkmn, amulet: null };
+    const n = pkmn.name ?? "포켓몬";
+    log.push(`${n}${josa(n, "을를")} 감싸던 신비의 베일이 사라졌다!`);
   }
 
   // 도발 만료: 마지막 라운드 종료 시 해제
@@ -765,6 +793,17 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
       entries[myKey][activeIdx[myKey]] = currentAttacker;
       log.push(`${attackerName}${josa(attackerName, "은는")} ${moveSlot.name}${josa(moveSlot.name, "으로")} 받는 데미지가 줄어들었다!`);
     }
+  } else if (moveData.amulet) {
+    // 신비의부적: 사용한 포켓몬만 AMULET_TURNS 라운드간 상태이상에 걸리지 않음. 이미 걸려 있으면 실패.
+    const attackerName = currentAttacker.name ?? "포켓몬";
+    log.push(`${attackerName}의 ${moveSlot.name}!`);
+    if (currentAttacker.amulet) {
+      log.push("그러나 실패했다!");
+    } else {
+      currentAttacker = { ...currentAttacker, amulet: { expireTurn: currentTurn + AMULET_TURNS } };
+      entries[myKey][activeIdx[myKey]] = currentAttacker;
+      log.push(`${attackerName}${josa(attackerName, "은는")} 신비의 베일에 둘러싸였다!`);
+    }
   } else if (moveData.aquaRing) {
     // 아쿠아링: 라운드 종료마다 최대 체력의 1/16 회복. 이미 두르고 있으면 실패.
     const attackerName = currentAttacker.name ?? "포켓몬";
@@ -903,9 +942,12 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
         const sandDefBonus = sandstormDefenseBonus(defender, currentWeather?.type);
         const defMult = rankMultiplier(clampRank(getEffectiveRank(oppRanks, "def", currentTurn) + sandDefBonus));
 
-        const typeMult = getDefenderTypeMultiplier(moveData.type, pokemonTypes(defender));
+        const typeMult = moveTypeMultiplier(moveData, defender);
         const stab = hasStab(pokemonTypes(attacker), moveData.type) ? 1.3 : 1;
         const weatherMult = weatherPowerMultiplier(currentWeather?.type, moveData.type);
+        // 속임수: 상대의 공격력(x0.7)과 상대의 공격 랭크로 계산
+        const atkStat = moveData.trickster ? (defender.atk ?? 0) * TRICKSTER_ATK_MULT : attacker.atk;
+        const dmgAtkMult = moveData.trickster ? rankMultiplier(getEffectiveRank(oppRanks, "atk", currentTurn)) : atkMult;
 
         let updatedDefender = { ...defender };
         moveConnected = typeMult > 0;
@@ -961,7 +1003,7 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
               hitDmg = typeMult === 0 ? 0 : multiHit.fixedDamage;
             } else {
               const rawDamage =
-                (power + attacker.atk * 4 + rollD10()) * atkMult * typeMult * stab * weatherMult -
+                (power + atkStat * 4 + rollD10()) * dmgAtkMult * typeMult * stab * weatherMult -
                 defender.def * 3 * defMult;
               isCrit = rollCrit(attacker);
               hitDmg = Math.max(0, Math.round(rawDamage * (isCrit ? 1.5 : 1) * screenMult));
@@ -1220,6 +1262,31 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
     entries[myKey][activeIdx[myKey]] = { ...cur, missedRound: currentTurn };
   }
 
+  // 무릎차기류: 빗나가면 자신의 최대 체력 x JUMP_KICK_CRASH_RATIO 데미지
+  if (moveData.jumpKick && moveMissed && entries[myKey][activeIdx[myKey]].hp > 0) {
+    const cur = entries[myKey][activeIdx[myKey]];
+    const crash = crashDamage(cur);
+    entries[myKey][activeIdx[myKey]] = crash.pokemon;
+    log.push(crash.message);
+    events.push({ logIndex: log.length - 1, type: "hit", side: myKey, hp: crash.pokemon.hp, status: crash.pokemon.status ?? null, hasAttacker: false });
+
+    const faint = handleFaintSwitch(entries, myKey, activeIdx);
+    if (faint.fainted) {
+      log.push(`${faint.name}${josa(faint.name, "은는")} 쓰러졌다!`);
+      if (faint.allFainted) {
+        update.battle_winner = oppKey;
+        log.push(`${displayName(oppKey, room)} 승리!`);
+        update[`${myKey}_entry`] = entries[myKey];
+        update[`${oppKey}_entry`] = entries[oppKey];
+        update.battle_log = log;
+        update.battle_event_log = events;
+        return ok(update);
+      }
+      update[`${myKey}_pending_switch`] = true;
+      directPendingSides.add(myKey);
+    }
+  }
+
   // 거대해머류: 실제로 기술을 썼으면(빗나가거나 막혀도) 다음 라운드엔 사용 불가
   if (moveData.heavyHammer && !blocked) {
     const cur = entries[myKey][activeIdx[myKey]];
@@ -1271,10 +1338,20 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
   return ok(update);
 }
 
-// 교체로 들어가는 포켓몬에게서 해제되는 상태 (방어류/빛의장막·리플렉터/연속자르기 누적/방어류 연속 사용 기록/도발/카운터용 피격 데미지/회오리불꽃류/아쿠아링/지옥찌르기/빗나감 기록/혼란·풀죽음)
+// 무릎차기류가 빗나갔을 때의 자해 데미지. 반환: { pokemon, message }
+function crashDamage(pokemon) {
+  const dmg = Math.max(1, Math.floor((pokemon.maxHp ?? pokemon.hp) * JUMP_KICK_CRASH_RATIO));
+  const n = pokemon.name ?? "포켓몬";
+  return {
+    pokemon: { ...pokemon, hp: Math.max(0, pokemon.hp - dmg) },
+    message: `${n}${josa(n, "은는")} 의욕이 넘쳐서 땅에 부딪쳤다!`,
+  };
+}
+
+// 교체로 들어가는 포켓몬에게서 해제되는 상태 (방어류/빛의장막·리플렉터/신비의부적/연속자르기 누적/방어류 연속 사용 기록/도발/카운터용 피격 데미지/회오리불꽃류/아쿠아링/지옥찌르기/빗나감 기록/혼란·풀죽음)
 function clearOnSwitchOut(pokemon) {
   const { "혼란": _confusion, "풀죽음": _flinch, ...volatiles } = pokemon.volatiles ?? {};
-  return { ...pokemon, guard: null, guardStreak: false, screen: null, furyCutter: 0, taunt: null, lastDamageTaken: 0, trap: null, aquaRing: false, throatChop: null, missedRound: null, volatiles };
+  return { ...pokemon, guard: null, guardStreak: false, screen: null, amulet: null, furyCutter: 0, taunt: null, lastDamageTaken: 0, trap: null, aquaRing: false, throatChop: null, missedRound: null, volatiles };
 }
 
 // 교체 공통 처리(자발적 교체/강제 교체/유턴): 나가는 포켓몬 상태 정리 -> 내보내기 로그/연출 -> 장판 적용.
@@ -1410,6 +1487,8 @@ export {
   rankMultiplier,
   getEffectiveRank,
   getDefenderTypeMultiplier,
+  moveTypeMultiplier,
+  crashDamage,
   hasStab,
   isAlwaysHit,
   rollAccuracy,
@@ -1427,6 +1506,7 @@ export {
   SCREEN_TURNS,
   SCREEN_DAMAGE_MULT,
   COUNTER_MULT,
+  TRICKSTER_ATK_MULT,
   VENOM_SHOCK_MULT,
   CONDITIONAL_POWER_MULT,
   GUTS_STATUSES,

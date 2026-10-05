@@ -38,7 +38,8 @@ import {
   clampRank,
   rankMultiplier,
   getEffectiveRank,
-  getDefenderTypeMultiplier,
+  moveTypeMultiplier,
+  crashDamage,
   hasStab,
   isAlwaysHit,
   rollAccuracy,
@@ -56,6 +57,7 @@ import {
   SCREEN_TURNS,
   SCREEN_DAMAGE_MULT,
   COUNTER_MULT,
+  TRICKSTER_ATK_MULT,
   VENOM_SHOCK_MULT,
   CONDITIONAL_POWER_MULT,
   GUTS_STATUSES,
@@ -144,7 +146,7 @@ export function sideOfUid(room, uid) {
 export function needsTarget(moveData) {
   if (!moveData || moveData.aoe || moveData.aoeEnemy) return false;
   if (moveData.futureSight || moveData.counter) return true;
-  if (moveData.spikyShield || moveData.defend || moveData.lightScreen || moveData.aquaRing || moveData.wish) return false;
+  if (moveData.spikyShield || moveData.defend || moveData.lightScreen || moveData.aquaRing || moveData.wish || moveData.wideGuard) return false;
   return targetsOpponent(moveData);
 }
 
@@ -207,6 +209,10 @@ const pname = (p) => p?.name ?? "포켓몬";
 const inBattle = (c, k) => !c.out[k] && (active(c, k)?.hp ?? 0) > 0;
 const hasAliveBench = (c, k) => c.entries[k].some((p, i) => i !== c.activeIdx[k] && p && p.hp > 0);
 const anyPending = (c) => DOUBLE_SIDES.some((k) => c.pending[k]);
+// 와이드가드는 팀 진영(t1_field/t2_field)에 사용한 라운드를 기록해 두고 그 라운드 동안만 유지. wideGuard: { turn }
+const wideGuardActive = (c, team) => c.fields[team]?.wideGuard?.turn === c.turn;
+// 필드에서 싸우고 있는 나와 아군 (나 먼저)
+const teamInBattle = (c, k) => [k, allyOf(k)].filter((x) => inBattle(c, x));
 
 function pushHit(c, k, pokemon, hasAttacker, logIndex = c.log.length - 1, attacker = null) {
   const ev = { logIndex, type: "hit", side: k, hp: pokemon.hp, status: pokemon.status ?? null, hasAttacker };
@@ -429,6 +435,11 @@ function endRound(c) {
     setActive(c, k, pkmn);
   }
 
+  // 와이드가드 해제 (사용한 라운드에만 유지)
+  for (const team of ["t1", "t2"]) {
+    if (c.fields[team]?.wideGuard) c.fields[team] = { ...c.fields[team], wideGuard: null };
+  }
+
   // 랭크 만료
   for (const k of DOUBLE_SIDES) {
     if (!live(k)) continue;
@@ -602,6 +613,11 @@ function hitOne(c, myKey, t, moveSlot, moveData, s) {
   const defGuard = defender.guard ?? null;
   const isDamaging = moveData.power > 0;
 
+  // 와이드가드: 이번 라운드 동안 그 팀으로 들어오는 범위 공격 기술(aoe/aoeEnemy)을 막음
+  if (s.spread && isDamaging && wideGuardActive(c, teamOf(t))) {
+    c.log.push(`${dn}${josa(dn, "은는")} 와이드가드로 몸을 지켰다!`);
+    return { hit: false, missed: false, connected: false, dmg: 0 };
+  }
   // 방어/판별: 공격 기술을 막음 (방어 상태는 그 포켓몬의 다음 행동 때까지 유지)
   if (defGuard && !defGuard.spiky && isDamaging && !s.breaksProtection) {
     c.log.push(`${dn}${josa(dn, "은는")} 공격으로부터 몸을 지켰다!`);
@@ -644,10 +660,13 @@ function hitOne(c, myKey, t, moveSlot, moveData, s) {
   const atkMult = rankMultiplier(getEffectiveRank(c.ranks[myKey], "atk", c.turn));
   const sandDefBonus = sandstormDefenseBonus(defender, weatherType);
   const defMult = rankMultiplier(clampRank(getEffectiveRank(c.ranks[t], "def", c.turn) + sandDefBonus));
-  const typeMult = getDefenderTypeMultiplier(moveData.type, pokemonTypes(defender));
+  const typeMult = moveTypeMultiplier(moveData, defender);
   const stab = hasStab(pokemonTypes(attacker), moveData.type) ? 1.3 : 1;
   const weatherMult = weatherPowerMultiplier(weatherType, moveData.type);
   const spreadMult = s.spread ? SPREAD_MULT : 1;
+  // 속임수: 대상의 공격력(x0.7)과 대상의 공격 랭크로 계산
+  const atkStat = moveData.trickster ? (defender.atk ?? 0) * TRICKSTER_ATK_MULT : attacker.atk;
+  const dmgAtkMult = moveData.trickster ? rankMultiplier(getEffectiveRank(c.ranks[t], "atk", c.turn)) : atkMult;
 
   let updated = { ...defender };
   const connected = typeMult > 0;
@@ -684,7 +703,7 @@ function hitOne(c, myKey, t, moveSlot, moveData, s) {
         hitDmg = typeMult === 0 ? 0 : Math.round(multiHit.fixedDamage * spreadMult);
       } else {
         const rawDamage =
-          (power + attacker.atk * 4 + rollD10()) * atkMult * typeMult * stab * weatherMult -
+          (power + atkStat * 4 + rollD10()) * dmgAtkMult * typeMult * stab * weatherMult -
           defender.def * 3 * defMult;
         isCrit = rollCrit(attacker);
         hitDmg = Math.max(0, Math.round(rawDamage * (isCrit ? 1.5 : 1) * screenMult * spreadMult));
@@ -1016,13 +1035,29 @@ export function useMove(room, myKey, moveIdx, targetKey = null, uTurnIdx = null)
     } else {
       c.log.push("그러나 실패했다!");
     }
-  } else if (moveData.lightScreen) {
+  } else if (moveData.wideGuard) {
+    // 와이드가드: 이번 라운드 동안 우리 팀으로 들어오는 범위 공격 기술을 막음 (단일 대상 기술은 못 막음)
     c.log.push(`${attackerName}의 ${moveSlot.name}!`);
-    if (cur.screen) {
+    const team = teamOf(myKey);
+    if (wideGuardActive(c, team)) {
       c.log.push("그러나 실패했다!");
     } else {
-      setActive(c, myKey, { ...cur, screen: { name: moveSlot.name, appliedTurn: c.turn, expireTurn: c.turn + SCREEN_TURNS } });
-      c.log.push(`${attackerName}${josa(attackerName, "은는")} ${moveSlot.name}${josa(moveSlot.name, "으로")} 받는 데미지가 줄어들었다!`);
+      c.fields[team] = { ...c.fields[team], wideGuard: { turn: c.turn } };
+      c.log.push(`${teamName(team, c.room)} 팀은 와이드가드로 보호받고 있다!`);
+    }
+  } else if (moveData.lightScreen) {
+    // 빛의장막/리플렉터: 필드에 있는 나와 아군 모두에게 적용 (이미 장막이 있는 포켓몬은 제외)
+    c.log.push(`${attackerName}의 ${moveSlot.name}!`);
+    const applied = teamInBattle(c, myKey).filter((k) => !active(c, k).screen);
+    if (applied.length === 0) {
+      c.log.push("그러나 실패했다!");
+    } else {
+      for (const k of applied) {
+        const p = active(c, k);
+        const n = pname(p);
+        setActive(c, k, { ...p, screen: { name: moveSlot.name, appliedTurn: c.turn, expireTurn: c.turn + SCREEN_TURNS } });
+        c.log.push(`${n}${josa(n, "은는")} ${moveSlot.name}${josa(moveSlot.name, "으로")} 받는 데미지가 줄어들었다!`);
+      }
     }
   } else if (moveData.aquaRing) {
     c.log.push(`${attackerName}의 ${moveSlot.name}!`);
@@ -1058,16 +1093,21 @@ export function useMove(room, myKey, moveIdx, targetKey = null, uTurnIdx = null)
       c.log.push(`${attackerName}${josa(attackerName, "은는")} 소원을 빌었다!`);
     }
   } else if (moveData.effect?.heal) {
+    // 자가 회복. healAllies(생명의물방울)면 필드에 있는 아군도 같은 비율로 회복
     c.log.push(`${attackerName}의 ${moveSlot.name}!`);
-    const maxHp = cur.maxHp ?? cur.hp;
     const ratio = healRatio(moveData.effect.heal, c.weather?.type);
-    const heal = Math.min(maxHp - cur.hp, Math.max(1, Math.round(maxHp * ratio)));
-    if (heal > 0) {
-      setActive(c, myKey, { ...cur, hp: cur.hp + heal });
-      c.log.push(`${attackerName}의 체력이 회복되었다!`);
-      pushHeal(c, myKey, cur.hp + heal);
-    } else {
-      c.log.push(`그러나 ${attackerName}의 체력은 가득 차 있다!`);
+    for (const k of moveData.healAllies ? teamInBattle(c, myKey) : [myKey]) {
+      const p = active(c, k);
+      const n = pname(p);
+      const maxHp = p.maxHp ?? p.hp;
+      const heal = Math.min(maxHp - p.hp, Math.max(1, Math.round(maxHp * ratio)));
+      if (heal > 0) {
+        setActive(c, k, { ...p, hp: p.hp + heal });
+        c.log.push(`${n}의 체력이 회복되었다!`);
+        pushHeal(c, k, p.hp + heal);
+      } else {
+        c.log.push(`그러나 ${n}의 체력은 가득 차 있다!`);
+      }
     }
   } else if (moveData.counter && !cur.lastDamageTaken) {
     c.log.push(`${attackerName}의 ${moveSlot.name}!`);
@@ -1089,6 +1129,13 @@ export function useMove(room, myKey, moveIdx, targetKey = null, uTurnIdx = null)
     }
   }
   if (moveMissed) setActive(c, myKey, { ...active(c, myKey), missedRound: c.turn });
+  // 무릎차기류: 노린 대상에게 모두 빗나가면 자신의 최대 체력 절반 데미지 (쓰러짐은 finish에서 처리)
+  if (moveData.jumpKick && moveMissed && active(c, myKey).hp > 0) {
+    const crash = crashDamage(active(c, myKey));
+    setActive(c, myKey, crash.pokemon);
+    c.log.push(crash.message);
+    pushHit(c, myKey, crash.pokemon, false);
+  }
   if (moveData.heavyHammer && !blocked) {
     setActive(c, myKey, { ...active(c, myKey), moveLock: { name: moveSlot.name, turn: c.turn + 1 } });
   }

@@ -68,6 +68,10 @@ export function applyStatus(pokemon, statusName, currentTurn) {
   if (isImmuneToStatus(pokemon, statusName)) {
     return { pokemon, applied: false, reason: "immune", message: `${name}${josa(name, "은는")} ${statusName}에 걸리지 않는다!` };
   }
+  // 신비의부적: 지속되는 동안 상태이상에 걸리지 않음. amulet: { expireTurn }
+  if (pokemon.amulet && currentTurn <= pokemon.amulet.expireTurn) {
+    return { pokemon, applied: false, reason: "amulet", message: `${name}${josa(name, "은는")} 신비의 베일에 보호받고 있다!` };
+  }
 
   const statusData = {
     ...(statusName === "얼음" ? { freezeTurn: 0 } : {}),
