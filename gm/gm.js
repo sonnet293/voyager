@@ -17,6 +17,7 @@ import {
   onSnapshot,
   runTransaction,
   serverTimestamp,
+  Timestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import {
   sideOfUid,
@@ -34,6 +35,11 @@ import * as Double from "../js/doubleEngine.js";
 import { isDoubleRoom } from "../js/rooms.js";
 
 const LOG_MAX_LINES = 200;
+
+// 처리 끝난 요청은 Firestore TTL 정책(actions 컬렉션 그룹, expireAt 필드)이 이 시각 뒤에 자동 삭제한다.
+// 포켓몬 선택 요청은 네 명이 다 고를 때까지 다시 읽으므로 넉넉히 하루 둔다.
+const ACTION_TTL_MS = 24 * 60 * 60 * 1000;
+const actionExpireAt = () => Timestamp.fromMillis(Date.now() + ACTION_TTL_MS);
 
 const roomListeners = new Map(); // roomId -> unsubscribe (actions 구독)
 const startInFlight = new Set(); // 게임 시작 트랜잭션 진행 중인 roomId
@@ -444,9 +450,9 @@ async function processAction(roomId, actionId) {
       const cleaned = stripUndefined(verdict.update ?? {});
       undefinedPaths = cleaned.found;
       tx.update(roomRef, cleaned.value);
-      tx.update(actionRef, { status: "done", processedAt: serverTimestamp() });
+      tx.update(actionRef, { status: "done", processedAt: serverTimestamp(), expireAt: actionExpireAt() });
     } else {
-      tx.update(actionRef, { status: "rejected", reason: verdict.reason, processedAt: serverTimestamp() });
+      tx.update(actionRef, { status: "rejected", reason: verdict.reason, processedAt: serverTimestamp(), expireAt: actionExpireAt() });
     }
     const sideOf = isDoubleRoom(roomId) ? Double.sideOfUid : sideOfUid;
     return { action, verdict, undefinedPaths, side: room ? sideOf(room, action.uid) : null };
