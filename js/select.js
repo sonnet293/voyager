@@ -40,8 +40,9 @@ function monSprite(mon) {
   return id ? spriteUrl(id) : mon?.portrait ?? null;
 }
 
-const sideOf = (room, uid) => (room.player1_uid === uid ? "p1" : room.player2_uid === uid ? "p2" : null);
-const selectionDone = (room) => !room.select_phase && !!room.p1_entry?.length && !!room.p2_entry?.length;
+// sides: 선택에 참여하는 자리 (싱글 p1·p2, 더블 p1~p4). p3 -> player3_uid
+const sideOf = (room, uid, sides) => sides.find((k) => room[`player${k.slice(1)}_uid`] === uid) ?? null;
+const selectionDone = (room, sides) => !room.select_phase && sides.every((k) => !!room[`${k}_entry`]?.length);
 
 function loadCss() {
   if (document.getElementById("select-css")) return;
@@ -83,7 +84,7 @@ function sendAction(roomRef, uid, type, payload) {
 }
 
 // 선택 단계가 끝나면(이미 끝났으면 즉시) resolve. spectator면 대기 화면만 보여준다.
-export function runSelection({ roomRef, myUid, spectator = false }) {
+export function runSelection({ roomRef, myUid, spectator = false, sides = ["p1", "p2"] }) {
   return new Promise((resolve) => {
     let ui = null;
     let entry = null;
@@ -97,7 +98,7 @@ export function runSelection({ roomRef, myUid, spectator = false }) {
       room = snap.data();
       if (!room || finished) return;
 
-      if (!room.game_started || selectionDone(room)) {
+      if (!room.game_started || selectionDone(room, sides)) {
         finished = true;
         unsub();
         if (ui) close(ui.overlay);
@@ -105,7 +106,7 @@ export function runSelection({ roomRef, myUid, spectator = false }) {
         return;
       }
 
-      mySide = spectator ? null : sideOf(room, myUid);
+      mySide = spectator ? null : sideOf(room, myUid, sides);
       if (!ui) {
         loadCss();
         ui = build(!mySide);
@@ -182,8 +183,8 @@ export function runSelection({ roomRef, myUid, spectator = false }) {
     }
 
     function render() {
-      const oppSide = mySide === "p1" ? "p2" : "p1";
-      const name = (side) => room[side === "p1" ? "player1_name" : "player2_name"] ?? (side === "p1" ? "Player1" : "Player2");
+      const many = sides.length > 2;
+      const name = (side) => room[`player${side.slice(1)}_name`] ?? `Player${side.slice(1)}`;
       const pill = (side, label) => {
         const done = !!room[`${side}_select_action`];
         const p = el("span", "sel-pill");
@@ -196,19 +197,21 @@ export function runSelection({ roomRef, myUid, spectator = false }) {
 
       ui.status.replaceChildren();
       if (!mySide) {
-        ui.desc.textContent = "두 트레이너가 모두 선택을 마치면 배틀이 시작됩니다.";
-        ui.status.append(pill("p1", name("p1")), pill("p2", name("p2")));
+        ui.desc.textContent = many
+          ? "모든 트레이너가 선택을 마치면 배틀이 시작됩니다."
+          : "두 트레이너가 모두 선택을 마치면 배틀이 시작됩니다.";
+        ui.status.append(...sides.map((k) => pill(k, name(k))));
         return;
       }
 
       const need = pickCount(entry);
       const submitted = !!room[`${mySide}_select_action`];
-      ui.status.append(pill(mySide, "나"), pill(oppSide, name(oppSide)));
+      ui.status.append(pill(mySide, "나"), ...sides.filter((k) => k !== mySide).map((k) => pill(k, name(k))));
 
       if (need === 0) {
         ui.desc.textContent = "엔트리에 포켓몬이 없습니다. 트레이너 카드를 확인해주세요.";
       } else if (submitted) {
-        ui.desc.textContent = "상대방의 선택을 기다리는 중...";
+        ui.desc.textContent = many ? "다른 트레이너의 선택을 기다리는 중..." : "상대방의 선택을 기다리는 중...";
       } else {
         ui.desc.textContent = `${need}마리를 고르세요. 고른 순서가 출전 순서가 되고, 한 번 더 누르면 취소됩니다.`;
       }
