@@ -342,11 +342,10 @@ function renderTurnUI(room) {
 }
 
 // ---- 턴 제한시간 ----
-// 내 차례가 되어 버튼이 열린 순간(주사위 연출 뒤)부터 이 브라우저에서 잰다. { key, deadline }
+// 누군가의 차례가 시작된 순간(주사위 연출 뒤)부터 이 브라우저에서 잰다. { key, deadline }
+// 카운트다운은 모두(다른 플레이어·관전자 포함)에게 보이고, 시간 초과 자동 행동은 차례인 본인 화면만 요청한다.
 let turnTimer = null;
 let turnTimerInterval = null;
-
-const isMyTurn = (room) => !!myKey && room.battle_turn === myKey && !!turnWaitKey(room);
 
 function turnTimerNode() {
   let node = $("turn-timer");
@@ -359,11 +358,11 @@ function turnTimerNode() {
 }
 
 function syncTurnTimer(room) {
-  if (!isMyTurn(room)) {
+  const key = turnWaitKey(room);
+  if (!key) {
     stopTurnTimer();
     return;
   }
-  const key = turnWaitKey(room);
   if (turnTimer?.key === key || isAnimating) return;
   turnTimer = { key, deadline: Date.now() + TURN_TIME_LIMIT_MS };
   clearInterval(turnTimerInterval);
@@ -381,7 +380,7 @@ function stopTurnTimer() {
 
 function tickTurnTimer() {
   const room = latestRoom;
-  if (!turnTimer || !room || !isMyTurn(room) || turnWaitKey(room) !== turnTimer.key) {
+  if (!turnTimer || !room || turnWaitKey(room) !== turnTimer.key) {
     stopTurnTimer();
     return;
   }
@@ -390,7 +389,9 @@ function tickTurnTimer() {
   node.hidden = false;
   node.textContent = `남은 시간 ${Math.ceil(left / 1000)}초`;
   node.dataset.urgent = String(left <= 10000);
-  if (left > 0 || !canActNow(room)) return; // 요청 처리 중이면 결과를 기다림
+  if (left > 0) return;
+  if (room.battle_turn !== myKey) { node.textContent = "시간 초과!"; return; } // 다른 사람 차례는 표시만 (자동 행동은 본인 화면/GM이)
+  if (!canActNow(room)) return; // 요청 처리 중이면 결과를 기다림
   stopTurnTimer();
   autoAct();
 }
