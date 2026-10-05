@@ -183,6 +183,14 @@
     font-weight: 700;
 }
 
+.dbl .turn-timer {
+    font-size: 12px;
+    font-weight: 700;
+    color: #555;
+    font-variant-numeric: tabular-nums;
+}
+.dbl .turn-timer[data-urgent="true"] { color: #c2474a; }
+
 .dbl .result {
     font-size: 18px;
     font-weight: 800;

@@ -1169,6 +1169,55 @@ export function useMove(room, myKey, moveIdx, targetKey = null, uTurnIdx = null)
   return finish(c, [...targets, myKey], myKey);
 }
 
+// ---- 턴 제한시간 ----
+// 자신의 차례에 이 시간 안에 행동하지 않으면 자동 행동(autoAct). 플레이어 화면이 먼저 재고,
+// 플레이어가 나갔거나 연결이 끊긴 경우를 위해 GM이 TURN_TIMEOUT_GRACE_MS만큼 더 기다린 뒤 대신 처리한다.
+export const TURN_TIME_LIMIT_MS = 30000;
+export const TURN_TIMEOUT_GRACE_MS = 15000;
+
+// 지금 누군가의 행동을 기다리는 중이면 그 차례를 구분하는 키, 아니면 null (교체 대기/라운드 전환/종료)
+export function turnWaitKey(room) {
+  if (!room?.game_started || room.battle_winner || !room.battle_turn) return null;
+  if (DOUBLE_SIDES.some((k) => room[`${k}_pending_switch`])) return null;
+  return `${room.round_no ?? 0}:${room.turn_pos ?? 0}:${room.battle_turn}`;
+}
+
+// 시간 초과 자동 행동. prefer: 고르던 중인 { moveIdx, target } (쓸 수 있으면 그대로, 빈 부분은 무작위)
+// 쓸 수 있는 기술 중 무작위(대상·유턴 교체 대상도 무작위). 기술이 없으면 무작위 교체, 그것도 안 되면 실패.
+export function autoAct(room, myKey, prefer = null) {
+  if (room.battle_winner) return fail("이미 끝난 배틀");
+  if (room.battle_turn !== myKey) return fail("내 턴이 아님");
+
+  const c = makeCtx(room);
+  const me = active(c, myKey);
+  if (!me || me.hp <= 0) return fail("포켓몬 없음");
+
+  const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const bench = c.entries[myKey]
+    .map((p, i) => (i !== c.activeIdx[myKey] && p && p.hp > 0 ? i : -1))
+    .filter((i) => i >= 0);
+  const timeoutRoom = { ...room, battle_log: [...(room.battle_log ?? []), `${displayName(myKey, room)}의 시간이 초과되었다!`] };
+
+  if (me.ghostDive) return useMove(timeoutRoom, myKey, me.ghostDive.moveIdx);
+
+  const usable = (me.moves ?? [])
+    .map((m, i) => (m && (m.pp ?? 0) > 0 && MOVES[m.name] && !isMoveLocked(me, m.name, c.turn) ? i : -1))
+    .filter((i) => i >= 0);
+  const moveIdx = usable.includes(prefer?.moveIdx) ? prefer.moveIdx : pickRandom(usable);
+  if (moveIdx === undefined) {
+    if (bench.length === 0 || me.trap) return fail("쓸 수 있는 기술도, 교체할 포켓몬도 없음");
+    return switchPokemon(timeoutRoom, myKey, pickRandom(bench));
+  }
+
+  const moveData = MOVES[me.moves[moveIdx].name];
+  const enemies = enemiesOf(myKey).filter((k) => inBattle(c, k));
+  const target = !needsTarget(moveData) ? null
+    : moveIdx === prefer?.moveIdx && enemies.includes(prefer?.target) ? prefer.target
+    : pickRandom(enemies) ?? null;
+  const pivot = moveData.uTurn && bench.length > 0 ? pickRandom(bench) : null;
+  return useMove(timeoutRoom, myKey, moveIdx, target, pivot);
+}
+
 // 벤치 포켓몬 교체.
 // - 교체 대기(쓰러져서 강제 교체) 중이면 행동 소모 없이 바로 교체. 모두 교체를 마치면 라운드를 이어감.
 // - 평상시엔 내 차례(행동) 하나를 소모함.

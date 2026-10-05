@@ -26,6 +26,8 @@ import {
   teamName,
   needsTarget,
   isMoveLocked,
+  turnWaitKey,
+  TURN_TIME_LIMIT_MS,
 } from "./doubleEngine.js";
 import { vacateSeat } from "./roomLeave.js";
 
@@ -336,6 +338,67 @@ function renderTurnUI(room) {
   renderTargetPicker(room);
   renderMoveButtons(room);
   renderBench(room);
+  syncTurnTimer(room);
+}
+
+// ---- 턴 제한시간 ----
+// 내 차례가 되어 버튼이 열린 순간(주사위 연출 뒤)부터 이 브라우저에서 잰다. { key, deadline }
+let turnTimer = null;
+let turnTimerInterval = null;
+
+const isMyTurn = (room) => !!myKey && room.battle_turn === myKey && !!turnWaitKey(room);
+
+function turnTimerNode() {
+  let node = $("turn-timer");
+  if (!node) {
+    node = el("div", "turn-timer");
+    node.id = "turn-timer";
+    $("turn-indicator")?.after(node);
+  }
+  return node;
+}
+
+function syncTurnTimer(room) {
+  if (!isMyTurn(room)) {
+    stopTurnTimer();
+    return;
+  }
+  const key = turnWaitKey(room);
+  if (turnTimer?.key === key || isAnimating) return;
+  turnTimer = { key, deadline: Date.now() + TURN_TIME_LIMIT_MS };
+  clearInterval(turnTimerInterval);
+  turnTimerInterval = setInterval(tickTurnTimer, 250);
+  tickTurnTimer();
+}
+
+function stopTurnTimer() {
+  turnTimer = null;
+  clearInterval(turnTimerInterval);
+  turnTimerInterval = null;
+  const node = $("turn-timer");
+  if (node) node.hidden = true;
+}
+
+function tickTurnTimer() {
+  const room = latestRoom;
+  if (!turnTimer || !room || !isMyTurn(room) || turnWaitKey(room) !== turnTimer.key) {
+    stopTurnTimer();
+    return;
+  }
+  const left = Math.max(0, turnTimer.deadline - Date.now());
+  const node = turnTimerNode();
+  node.hidden = false;
+  node.textContent = `남은 시간 ${Math.ceil(left / 1000)}초`;
+  node.dataset.urgent = String(left <= 10000);
+  if (left > 0 || !canActNow(room)) return; // 요청 처리 중이면 결과를 기다림
+  stopTurnTimer();
+  autoAct();
+}
+
+// 시간 초과: GM이 자동 행동을 정함 (고르던 기술/대상이 있으면 그걸 우선, 나머지는 무작위)
+function autoAct() {
+  const prefer = pick ? { moveIdx: pick.moveIdx, target: pick.target ?? null } : null;
+  return requestTurnAction("timeout", prefer ? { prefer } : {});
 }
 
 function updateHpBar(k, hp, maxHp) {

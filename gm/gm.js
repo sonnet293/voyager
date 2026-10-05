@@ -39,6 +39,7 @@ const roomListeners = new Map(); // roomId -> unsubscribe (actions 구독)
 const startInFlight = new Set(); // 게임 시작 트랜잭션 진행 중인 roomId
 const queued = new Set(); // 큐에 들어간 "roomId/actionId"
 const queue = []; // { roomId, actionId }
+const turnWatch = new Map(); // 더블배틀 roomId -> { key, timer } (턴 제한시간 감시)
 let busy = false;
 let unsubRooms = null;
 
@@ -189,6 +190,7 @@ function startServer() {
       for (const { id, room } of rooms) {
         watchActions(id);
         maybeStartGame(id, room);
+        if (isDoubleRoom(id)) watchTurnTimeout(id, room);
       }
     },
     (err) => gmLog(`rooms 구독 실패: ${err.message}`, "error")
@@ -200,6 +202,47 @@ function stopServer() {
   unsubRooms = null;
   roomListeners.forEach((unsub) => unsub());
   roomListeners.clear();
+  turnWatch.forEach(({ timer }) => clearTimeout(timer));
+  turnWatch.clear();
+}
+
+// ---- 더블배틀 턴 제한시간 ----
+// 같은 차례(turnWaitKey)가 제한시간 + 여유시간 동안 바뀌지 않으면 그 플레이어 대신 자동 행동.
+// 보통은 플레이어 화면이 30초에 먼저 timeout 요청을 보내고, 이건 화면을 닫았거나 연결이 끊긴 경우용.
+function watchTurnTimeout(roomId, room) {
+  const key = Double.turnWaitKey(room);
+  const cur = turnWatch.get(roomId);
+  if (cur?.key === key) return;
+  if (cur) clearTimeout(cur.timer);
+  if (!key) {
+    turnWatch.delete(roomId);
+    return;
+  }
+  const timer = setTimeout(
+    () => forceTurnTimeout(roomId, key),
+    Double.TURN_TIME_LIMIT_MS + Double.TURN_TIMEOUT_GRACE_MS
+  );
+  turnWatch.set(roomId, { key, timer });
+}
+
+async function forceTurnTimeout(roomId, key) {
+  const roomRef = doc(db, "rooms", roomId);
+  try {
+    const result = await runTransaction(db, async (tx) => {
+      const room = (await tx.get(roomRef)).data();
+      if (!room || Double.turnWaitKey(room) !== key) return null; // 그사이 행동함
+      const side = room.battle_turn;
+      const verdict = Double.autoAct(room, side);
+      if (verdict.ok) tx.update(roomRef, stripUndefined(verdict.update).value);
+      return { side, verdict };
+    });
+    if (!result) return;
+    if (result.verdict.ok) gmLog(`${roomId}/${result.side} 시간 초과 → 자동 행동`);
+    else gmLog(`${roomId}/${result.side} 시간 초과 자동 행동 실패: ${result.verdict.reason}`, "warn");
+  } catch (err) {
+    gmLog(`${roomId} 시간 초과 처리 실패: ${err.message}`, "error");
+    console.error(err);
+  }
 }
 
 // 방마다 pending 요청을 구독. 창을 다시 켜면 쌓여 있던 pending 요청부터 이어서 처리된다.
@@ -297,6 +340,10 @@ function judgeDouble(room, action) {
       if (!sameRound) return { ok: false, reason: "지난 라운드의 요청" };
       if (!Number.isInteger(payload.targetIdx)) return { ok: false, reason: "잘못된 교체 대상" };
       return Double.switchPokemon(room, side, payload.targetIdx);
+    case "timeout": // 플레이어 화면에서 제한시간이 끝남 -> 자동 행동 (고르던 기술/대상이 있으면 우선)
+      if (!isPlayer) return { ok: false, reason: "플레이어가 아님" };
+      if (!sameRound) return { ok: false, reason: "지난 라운드의 요청" };
+      return Double.autoAct(room, side, payload.prefer ?? null);
     case "unselect":
       if (!isPlayer) return { ok: false, reason: "플레이어가 아님" };
       return Double.cancelSelection(room, side);
