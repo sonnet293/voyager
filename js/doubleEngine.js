@@ -64,6 +64,8 @@ import {
   CHARGE_POWER_MULT,
   UNDERGROUND_HIT_MULT,
   hitsUnderground,
+  diveMessage,
+  bodyPressRawDamage,
   isCharged,
   AQUA_RING_HEAL_RATIO,
   THROAT_CHOP_TURNS,
@@ -708,9 +710,10 @@ function hitOne(c, myKey, t, moveSlot, moveData, s) {
       } else if (multiHit?.fixedDamage) {
         hitDmg = typeMult === 0 ? 0 : Math.round(multiHit.fixedDamage * spreadMult);
       } else {
-        const rawDamage =
-          (power + atkStat * 4 + rollD10()) * dmgAtkMult * typeMult * stab * weatherMult -
-          defender.def * 3 * defMult;
+        const rawDamage = moveData.bodyPress
+          ? bodyPressRawDamage(power, attacker, defender, rankMultiplier(getEffectiveRank(c.ranks[myKey], "def", c.turn)), defMult, typeMult, stab)
+          : (power + atkStat * 4 + rollD10()) * dmgAtkMult * typeMult * stab * weatherMult -
+            defender.def * 3 * defMult;
         isCrit = rollCrit(attacker);
         hitDmg = Math.max(0, Math.round(rawDamage * (isCrit ? 1.5 : 1) * screenMult * spreadMult * undergroundMult));
       }
@@ -1033,11 +1036,9 @@ export function useMove(room, myKey, moveIdx, targetKey = null, uTurnIdx = null)
   if (blocked) {
     // 행동 저지 (혼란 자해로 쓰러졌으면 finish에서 처리)
   } else if ((moveData.ghostDive || moveData.dig) && !diving) {
-    // 고스트다이브/구멍파기 1턴째: 사라졌다가 다음 행동 때 강제 공격. 구멍파기(underground)는 지진류에는 맞음
+    // 고스트다이브/구멍파기/뛰어오르기 1턴째: 사라졌다가 다음 행동 때 강제 공격. 구멍파기(underground)는 지진류에는 맞음
     c.log.push(`${attackerName}의 ${moveSlot.name}!`);
-    c.log.push(moveData.dig
-      ? `${attackerName}${josa(attackerName, "은는")} 땅속으로 파고들었다!`
-      : `${attackerName}${josa(attackerName, "은는")} 어디론가 사라졌다!`);
+    c.log.push(diveMessage(attackerName, moveData));
     setActive(c, myKey, { ...cur, ghostDive: { moveIdx, target: targetKey ?? null, underground: !!moveData.dig } });
   } else if (moveData.spikyShield || moveData.defend) {
     // 방어류: 자신의 다음 행동 전까지 들어오는 기술을 막음. 직전 행동도 방어류 성공이었으면 성공률 감소

@@ -204,6 +204,22 @@ const CHARGE_POWER_MULT = 1.5;
 // 구멍파기: 땅속에 있는 포켓몬이 지진류(hitsUnderground)에 맞으면 최종 데미지 배율
 const UNDERGROUND_HIT_MULT = 2;
 
+// 고스트다이브류 1턴째(사라질 때) 로그
+function diveMessage(name, moveData) {
+  if (moveData.dig) return `${name}${josa(name, "은는")} 땅속으로 파고들었다!`;
+  if (moveData.bounce) return `${name}${josa(name, "은는")} 높이 뛰어올랐다!`;
+  return `${name}${josa(name, "은는")} 어디론가 사라졌다!`;
+}
+
+// 바디프레스: 공격력 대신 자신의 방어력으로 계산.
+// 최종 피해량 = ((위력 + 자신의 방어력x1.3x자신의방어랭크보정 + 1d10) x 타입상성 x 자속) - (상대 방어력x5 x 상대방어랭크보정)
+const BODY_PRESS_SELF_DEF_MULT = 1.3;
+const BODY_PRESS_TARGET_DEF_MULT = 5;
+function bodyPressRawDamage(power, attacker, defender, selfDefMult, defMult, typeMult, stab) {
+  return (power + (attacker.def ?? 0) * BODY_PRESS_SELF_DEF_MULT * selfDefMult + rollD10()) * typeMult * stab -
+    (defender.def ?? 0) * BODY_PRESS_TARGET_DEF_MULT * defMult;
+}
+
 // 구멍파기로 땅속에 있는 상대에게 이 기술이 닿는지
 function hitsUnderground(defender, moveData) {
   return !!(defender?.ghostDive?.underground && moveData.hitsUnderground);
@@ -775,13 +791,11 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
       directPendingSides.add(myKey);
     }
   } else if ((moveData.ghostDive || moveData.dig) && !diving) {
-    // 고스트다이브/구멍파기 1턴째: 공격하지 않고 사라짐. 다음 내 턴에 같은 기술로 강제 공격.
+    // 고스트다이브/구멍파기/뛰어오르기 1턴째: 공격하지 않고 사라짐. 다음 내 턴에 같은 기술로 강제 공격.
     // 구멍파기(underground)는 땅속에 있는 동안 지진류(hitsUnderground)에는 맞음
     const attackerName = currentAttacker.name ?? "포켓몬";
     log.push(`${attackerName}의 ${moveSlot.name}!`);
-    log.push(moveData.dig
-      ? `${attackerName}${josa(attackerName, "은는")} 땅속으로 파고들었다!`
-      : `${attackerName}${josa(attackerName, "은는")} 어디론가 사라졌다!`);
+    log.push(diveMessage(attackerName, moveData));
     currentAttacker = { ...currentAttacker, ghostDive: { moveIdx, underground: !!moveData.dig } };
     entries[myKey][activeIdx[myKey]] = currentAttacker;
   } else if (moveData.spikyShield || moveData.defend) {
@@ -1031,9 +1045,10 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
             } else if (multiHit?.fixedDamage) {
               hitDmg = typeMult === 0 ? 0 : multiHit.fixedDamage;
             } else {
-              const rawDamage =
-                (power + atkStat * 4 + rollD10()) * dmgAtkMult * typeMult * stab * weatherMult -
-                defender.def * 3 * defMult;
+              const rawDamage = moveData.bodyPress
+                ? bodyPressRawDamage(power, attacker, defender, rankMultiplier(getEffectiveRank(myRanks, "def", currentTurn)), defMult, typeMult, stab)
+                : (power + atkStat * 4 + rollD10()) * dmgAtkMult * typeMult * stab * weatherMult -
+                  defender.def * 3 * defMult;
               isCrit = rollCrit(attacker);
               hitDmg = Math.max(0, Math.round(rawDamage * (isCrit ? 1.5 : 1) * screenMult * undergroundMult));
             }
@@ -1542,6 +1557,8 @@ export {
   CHARGE_POWER_MULT,
   UNDERGROUND_HIT_MULT,
   hitsUnderground,
+  diveMessage,
+  bodyPressRawDamage,
   isCharged,
   AQUA_RING_HEAL_RATIO,
   THROAT_CHOP_TURNS,
