@@ -36,7 +36,6 @@ function hasType(pokemon, typeName) {
 function isImmuneToStatus(pokemon, statusName) {
   if (statusName === "독") return hasType(pokemon, "독") || hasType(pokemon, "강철");
   if (statusName === "화상") return hasType(pokemon, "불");
-  if (statusName === "마비") return hasType(pokemon, "전기");
   if (statusName === "얼음") return hasType(pokemon, "얼음");
   return false;
 }
