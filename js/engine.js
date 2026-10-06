@@ -212,8 +212,8 @@ function diveMessage(name, moveData) {
 }
 
 // 바디프레스: 공격력 대신 자신의 방어력으로 계산.
-// 최종 피해량 = ((위력 + 자신의 방어력x1.3x자신의방어랭크보정 + 1d10) x 타입상성 x 자속) - (상대 방어력x5 x 상대방어랭크보정)
-const BODY_PRESS_SELF_DEF_MULT = 1.3;
+// 최종 피해량 = ((위력 + 자신의 방어력x2x자신의방어랭크보정 + 1d10) x 타입상성 x 자속) - (상대 방어력x5 x 상대방어랭크보정)
+const BODY_PRESS_SELF_DEF_MULT = 2;
 const BODY_PRESS_TARGET_DEF_MULT = 5;
 function bodyPressRawDamage(power, attacker, defender, selfDefMult, defMult, typeMult, stab) {
   return (power + (attacker.def ?? 0) * BODY_PRESS_SELF_DEF_MULT * selfDefMult + rollD10()) * typeMult * stab -
