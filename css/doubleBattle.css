@@ -317,6 +317,7 @@
     font-size: 14px;
     color: #111;
 }
+.chat-input:focus { outline: none; }
 .chat-input::placeholder { color: #aaa; }
 .chat-send {
     padding: 6px 14px;
