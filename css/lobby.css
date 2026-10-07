@@ -2,14 +2,13 @@
    대기실 (pages/battleroomN.html)
    ========================================================== */
 
-body.page-lobby { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
-
 .lobby {
   display: grid;
   gap: clamp(16px, 3vh, 26px);
   max-width: 960px;
   margin: 0 auto;
-  padding: clamp(20px, 4vh, 44px) var(--pad) 32px;
+  /* 하단 고정 버튼 바(.lobby-actions)에 가리지 않도록 아래 여백 확보 */
+  padding: clamp(20px, 4vh, 44px) var(--pad) calc(120px + env(safe-area-inset-bottom));
 }
 
 /* ── 상단 히어로 + 레이더 ───────────────────────── */
