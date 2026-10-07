@@ -22,8 +22,11 @@ const normalize = (s) => s.replace(/\s+/g, "").toLowerCase();
 const ALL_POKEMON = [...POKEMON_KO.map(([id, name]) => [id, name, id]), ...POKEMON_FORMS_KO];
 const ID_BY_NAME = new Map(ALL_POKEMON.map(([id, name]) => [normalize(name), id]));
 
-const spriteUrl = (id) =>
-  `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`;
+const spriteUrl = (id, shiny = false) =>
+  `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${shiny ? "shiny/" : ""}${id}.png`;
+// 이름에 ✨ 가 있으면 이로치 (예: "✨가라르 나옹")
+const SHINY_MARK = /✨️?/gu;
+const isShiny = (name) => /✨/u.test(name ?? "");
 
 const grid          = document.getElementById("party-grid");
 const avatarImg     = document.getElementById("avatar-img");
@@ -111,10 +114,10 @@ function renderEntrySlot(index, mon) {
 
   // 카드 표시 이름: entry[i].cardName (Firestore 에서만 수정) > entry[i].name
   const name = (typeof mon.cardName === "string" && mon.cardName.trim()) || mon.name;
-  const id = ID_BY_NAME.get(normalize(name ?? ""));
+  const id = ID_BY_NAME.get(normalize((name ?? "").replace(SHINY_MARK, "")));
   const types = el("div");
   if (id) {
-    slot.append(spriteImg(spriteUrl(id), name));
+    slot.append(spriteImg(spriteUrl(id, isShiny(name)), name));
   } else if (mon.portrait) {
     slot.append(spriteImg(mon.portrait, name, true));
   }

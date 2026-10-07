@@ -21,8 +21,12 @@ const normalize = (s) => s.replace(/\s+/g, "").toLowerCase();
 const ID_BY_NAME = new Map(
   [...POKEMON_KO, ...POKEMON_FORMS_KO].map(([id, name]) => [normalize(name), id])
 );
-const spriteUrl = (id) =>
-  `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`;
+const spriteUrl = (id, shiny = false) =>
+  `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${shiny ? "shiny/" : ""}${id}.png`;
+// 이름에 ✨ 가 있으면 이로치 (예: "✨가라르 나옹")
+const SHINY_MARK = /✨️?/gu;
+const isShiny = (name) => /✨/u.test(name ?? "");
+const idOf = (name) => ID_BY_NAME.get(normalize((name ?? "").replace(SHINY_MARK, "")));
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag);
@@ -36,8 +40,11 @@ const monName = (mon) => (typeof mon?.cardName === "string" && mon.cardName.trim
 
 // 도트 이미지도 표시 이름(cardName) 기준으로 찾고, 없으면 name으로 — 폼 차이(예: 루가루암 (한밤중의 모습)) 반영
 function monSprite(mon) {
-  const id = ID_BY_NAME.get(normalize(monName(mon))) ?? ID_BY_NAME.get(normalize(mon?.name ?? ""));
-  return id ? spriteUrl(id) : mon?.portrait ?? null;
+  const shown = monName(mon);
+  const id = idOf(shown);
+  if (id) return spriteUrl(id, isShiny(shown));
+  const baseId = idOf(mon?.name);
+  return baseId ? spriteUrl(baseId, isShiny(mon?.name)) : mon?.portrait ?? null;
 }
 
 // sides: 선택에 참여하는 자리 (싱글 p1·p2, 더블 p1~p4). p3 -> player3_uid
