@@ -112,6 +112,7 @@ export const MOVES = {
   "아쿠아제트": { power: 30, type: "물", accuracy: 100, alwaysHit: true,  effect: null },
   "하이드로펌프":{ power: 60, type: "물", accuracy: 80,  alwaysHit: false, effect: null },
   "물의파동":   { power: 40, type: "물", accuracy: 100, alwaysHit: false, effect: { chance: 0.2, volatile: "혼란" } },
+  "바다회오리": { power: 35, type: "물", accuracy: 85,  alwaysHit: false, effect: null, trap: true },
   "열탕":       { power: 50, type: "물", accuracy: 100, alwaysHit: false, effect: { chance: 0.3, status: "화상" } },
   "셸블레이드": { power: 45, type: "물", accuracy: 95,  alwaysHit: false, effect: null,
                   rank: { chance: 0.5, targetDef: -1, turns: 2 } },
