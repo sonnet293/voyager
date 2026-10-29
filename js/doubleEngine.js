@@ -813,8 +813,11 @@ function hitOne(c, myKey, t, moveSlot, moveData, s) {
     }
   }
 
+  // 씨뿌리기: 풀 타입에게는 효과 없음, 이미 씨가 심어져 있으면 실패
   if (moveData.leechSeed) {
-    if (updated.leechSeed) {
+    if (pokemonTypes(updated).includes("풀")) {
+      c.log.push(`${dn}에게는 효과가 없는 듯하다...`);
+    } else if (updated.leechSeed) {
       c.log.push("그러나 실패했다!");
     } else {
       updated = { ...updated, leechSeed: { side: myKey, turn: c.turn } };

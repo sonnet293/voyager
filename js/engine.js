@@ -1264,9 +1264,11 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
           }
         }
 
-        // 씨뿌리기: 이미 씨가 심어져 있으면 실패
+        // 씨뿌리기: 풀 타입에게는 효과 없음, 이미 씨가 심어져 있으면 실패
         if (moveData.leechSeed) {
-          if (updatedDefender.leechSeed) {
+          if (pokemonTypes(updatedDefender).includes("풀")) {
+            log.push(`${defenderName}에게는 효과가 없는 듯하다...`);
+          } else if (updatedDefender.leechSeed) {
             log.push("그러나 실패했다!");
           } else {
             updatedDefender = { ...updatedDefender, leechSeed: { side: myKey, turn: currentTurn } };
