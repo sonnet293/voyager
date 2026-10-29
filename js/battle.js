@@ -13,7 +13,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { MOVES } from "./moves.js";
 import { formatPokemonName } from "./effecthandler.js";
-import { displayName, isMoveLocked } from "./engine.js";
+import { displayName, isMoveLocked, isRecharging } from "./engine.js";
 import { vacateSeat } from "./roomLeave.js";
 
 const roomRef = doc(db, "rooms", ROOM_ID);
@@ -394,7 +394,9 @@ function renderMoveButtons(room) {
     // 고스트다이브로 사라진 상태면 그 기술만 누를 수 있음 (다음 턴 강제 공격, PP는 이미 소모됨)
     const diving = myPkmn.ghostDive;
     const locked = isMoveLocked(myPkmn, move.name, room.round_no ?? 0); // 거대해머: 사용 다음 라운드엔 잠김
-    const usable = diving ? canAct && diving.moveIdx === i : canAct && (move.pp ?? 0) > 0 && !locked;
+    // 파괴광선 반동 라운드엔 아무 버튼이나 눌러 턴을 넘김 (서버가 행동 불가 처리)
+    const recharging = isRecharging(myPkmn, room.round_no ?? 0);
+    const usable = diving ? canAct && diving.moveIdx === i : canAct && (recharging || ((move.pp ?? 0) > 0 && !locked));
 
     const moveData = MOVES[move.name];
     btn.classList.toggle("uturn-picking", uTurnPick === i);
@@ -411,7 +413,7 @@ function renderMoveButtons(room) {
     btn.onclick = () => {
       playButtonSound();
       // 유턴류 기술: 교체할 수 있는 벤치가 있으면 먼저 교체 대상을 고르게 함 (같은 버튼을 다시 누르면 취소)
-      const canPivot = moveData?.uTurn && !diving &&
+      const canPivot = moveData?.uTurn && !diving && !recharging &&
         (myPkmn.hp > 0) && room[`${myKey}_entry`].some((p, idx) => idx !== activeIdx && p && p.hp > 0);
       if (canPivot) {
         uTurnPick = uTurnPick === i ? null : i;
@@ -449,6 +451,7 @@ function renderBenchSide(dataKey, uiKey, room) {
     !anyonePending &&
     !entry[activeIdx]?.ghostDive &&
     !entry[activeIdx]?.trap && // 회오리불꽃류에 갇혀 있으면 자발적 교체 불가
+    !isRecharging(entry[activeIdx], room.round_no ?? 0) && // 파괴광선 반동 중엔 교체 불가
     !room.battle_winner &&
     !isAnimating &&
     !actionInFlight &&

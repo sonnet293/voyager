@@ -65,6 +65,8 @@ export const MOVES = {
                   effect: null, fixedDamage: 40 },
   "튀어오르기": { power: 0,  type: "노말", accuracy: 100, alwaysHit: true,  effect: null, splash: true, targetSelf: true },
   "파괴광선":   { power: 70, type: "노말", accuracy: 90,  alwaysHit: false, effect: null, hyperBeam: true },
+  "흔들흔들댄스":{ power: 0, type: "노말", accuracy: 100, alwaysHit: false,
+                  effect: { chance: 1, volatile: "혼란" }, aoe: true },
   "소란피기":   { power: 50, type: "노말", accuracy: 100, alwaysHit: false, effect: null,
                   outrage: { confusion: false, minTurn: 2, maxTurn: 5, powers: [50, 45, 40, 40, 40] } },
   "더블윙":     { power: 30, type: "비행", accuracy: 90,  alwaysHit: false, effect: null,
@@ -185,6 +187,7 @@ export const MOVES = {
   "휘적휘적포":       { power: 50, type: "풀", accuracy: 90, alwaysHit: false, effect: { drain: 0.15, chance: 0.2, status: "화상" }, aoeEnemy: true },
   "힘흡수":           { power: 0,  type: "풀", accuracy: 100, alwaysHit: false, effect: null, strengthSap: 6,
                         targetSelf: false, rank: { targetAtk: -1, turns: 2 } },
+  "리프스톰":           { power: 70,  type: "풀", accuracy: 90, alwaysHit: false, effect: null, targetSelf: false, rank: { atk: -1, turns: 2 } },
   // ───── 얼음 ─────
   "눈보라":         { power: 40, type: "얼음", accuracy: 70,  alwaysHit: false, effect: { chance: 0.1, status: "얼음" }, aoeEnemy: true },
   "얼음뭉치":       { power: 35, type: "얼음", accuracy: 100, alwaysHit: true,  effect: null },
@@ -263,6 +266,7 @@ export const MOVES = {
                   rank: { targetDef: -1, turns: 3 } },
   "파워젬":     { power: 50, type: "바위", accuracy: 100,  alwaysHit: false, effect: null },
   "록블라스트": { power: 40, type: "바위", accuracy: 90,  alwaysHit: false, effect: null },
+  "록커트": { power: 0, type: "바위", accuracy: 100,  alwaysHit: true, effect: null, rank: { spd: 2, turns: 2 } },
   "원시의힘":   { power: 40, type: "바위", accuracy: 100, alwaysHit: false, effect: null,
                   rank: { chance: 0.1, atk: 1, def: 1, spd: 1, turns: 3 } },
   "스톤샤워":   { power: 45, type: "바위", accuracy: 90,  alwaysHit: false, effect: { chance: 0.3, volatile: "풀죽음" }, aoeEnemy: true },
@@ -411,7 +415,7 @@ export const MOVES = {
                   effect: { chance: 0.1, def: 1, turns: 3 } },
   "금속음":     { power: 0,  type: "강철", accuracy: 85,  alwaysHit: false, effect: null,
                   rank: { targetDef: -2, turns: 2 } },
-  "철벽":       { power: 0,  type: "강철", accuracy: 85,  alwaysHit: true,  effect: null,
+  "철벽":       { power: 0,  type: "강철", accuracy: 100,  alwaysHit: true,  effect: null,
                   rank: { def: 2, turns: 2 } },
 
   // ───── 페어리 ─────

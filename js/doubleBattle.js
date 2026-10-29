@@ -26,6 +26,7 @@ import {
   teamName,
   needsTarget,
   isMoveLocked,
+  isRecharging,
   turnWaitKey,
   TURN_TIME_LIMIT_MS,
 } from "./doubleEngine.js";
@@ -485,6 +486,14 @@ function liveEnemies(room) {
   return myKey ? enemiesOf(myKey).filter((k) => inBattle(room, k)) : [];
 }
 
+// 고를 수 있는 대상 (씨뿌리기는 아군도 가능)
+function targetChoices(room, moveData) {
+  const ally = myKey && moveData?.leechSeed && inBattle(room, allyOf(myKey)) ? [allyOf(myKey)] : [];
+  return [...liveEnemies(room), ...ally];
+}
+
+const pickMoveData = (room) => MOVES[myActive(room)?.moves?.[pick?.moveIdx]?.name];
+
 function benchAlive(room) {
   const idx = room[`${myKey}_active_idx`] ?? 0;
   return (room[`${myKey}_entry`] ?? []).some((p, i) => i !== idx && p && p.hp > 0);
@@ -503,8 +512,8 @@ function onMoveClick(room, i) {
 
   const enemies = liveEnemies(room);
   const counterAuto = moveData?.counter && me.lastHitBy && enemies.includes(me.lastHitBy);
-  const needT = needsTarget(moveData) && enemies.length > 1 && !counterAuto;
-  const needP = !!moveData?.uTurn && me.hp > 0 && benchAlive(room);
+  const needT = needsTarget(moveData) && targetChoices(room, moveData).length > 1 && !counterAuto && !isRecharging(me, room.round_no ?? 0);
+  const needP = !!moveData?.uTurn && me.hp > 0 && benchAlive(room) && !isRecharging(me, room.round_no ?? 0);
 
   if (!needT && !needP) {
     useMove(i, needsTarget(moveData) ? (enemies[0] ?? null) : null);
@@ -516,7 +525,7 @@ function onMoveClick(room, i) {
 
 function chooseTarget(room, k) {
   if (!pick || !pick.needTarget || pick.target) return;
-  if (!liveEnemies(room).includes(k)) return;
+  if (!targetChoices(room, pickMoveData(room)).includes(k)) return;
   playButtonSound();
   pick.target = k;
   if (pick.needPivot) { renderTurnUI(room); return; }
@@ -533,12 +542,13 @@ function renderTargetPicker(room) {
   const choosing = !!pick?.needTarget && !pick.target && canActNow(room);
   box.hidden = !choosing;
   box.replaceChildren();
-  for (const k of DOUBLE_SIDES) $(`slot-${k}`)?.classList.toggle("targetable", choosing && liveEnemies(room).includes(k));
+  const choices = choosing ? targetChoices(room, pickMoveData(room)) : [];
+  for (const k of DOUBLE_SIDES) $(`slot-${k}`)?.classList.toggle("targetable", choices.includes(k));
   if (!choosing) return;
 
   const moveName = myActive(room)?.moves?.[pick.moveIdx]?.name ?? "";
   box.append(el("span", "target-label", `${moveName} → 대상 선택`));
-  for (const k of liveEnemies(room)) {
+  for (const k of choices) {
     const btn = el("button", "target-btn");
     btn.type = "button";
     btn.append(el("span", "target-name", activeOf(room, k)?.name ?? "포켓몬"), el("span", "target-owner", displayName(k, room)));
@@ -565,7 +575,9 @@ function renderMoveButtons(room) {
     const canAct = canActNow(room);
     const diving = me.ghostDive;
     const locked = isMoveLocked(me, move.name, room.round_no ?? 0);
-    const usable = diving ? canAct && diving.moveIdx === i : canAct && (move.pp ?? 0) > 0 && !locked && me.hp > 0;
+    // 파괴광선 반동 라운드엔 아무 버튼이나 눌러 턴을 넘김 (서버가 행동 불가 처리)
+    const recharging = isRecharging(me, room.round_no ?? 0);
+    const usable = diving ? canAct && diving.moveIdx === i : canAct && (recharging || ((move.pp ?? 0) > 0 && !locked)) && me.hp > 0;
 
     const moveData = MOVES[move.name];
     btn.classList.toggle("uturn-picking", pick?.moveIdx === i);
@@ -605,6 +617,7 @@ function renderBench(room) {
     !anyPending(room) &&
     !me?.ghostDive &&
     !me?.trap &&
+    !isRecharging(me, room.round_no ?? 0) && // 파괴광선 반동 중엔 교체 불가
     canActNow(room);
 
   entry.forEach((pkmn, idx) => {

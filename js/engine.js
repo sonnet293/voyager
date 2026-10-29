@@ -233,6 +233,34 @@ function isCharged(attacker, moveData, currentTurn) {
 // 아쿠아링: 라운드 종료마다 최대 체력 x 비율 회복
 const AQUA_RING_HEAL_RATIO = 1 / 16;
 
+// 파괴광선류(hyperBeam): 맞히면 다음 라운드엔 반동으로 행동 불가. recharge: { turn: 행동할 수 없는 라운드 }
+function isRecharging(pokemon, currentTurn) {
+  return pokemon?.recharge?.turn === currentTurn;
+}
+
+function rechargeMessage(name) {
+  return `${name}${josa(name, "은는")} 공격의 반동으로 움직일 수 없다!`;
+}
+
+// 씨뿌리기: 심은 라운드부터 2라운드에 한 번(심은 다음 라운드, 그 2라운드 뒤...) 라운드 종료 시
+// 최대 체력 x 비율만큼 빼앗아 심은 쪽 자리에 나와 있는 포켓몬이 회복. leechSeed: { side: 심은 플레이어, turn: 심은 라운드 }
+const LEECH_SEED_RATIO = 1 / 8;
+
+function leechSeedDrainsNow(pokemon, currentTurn) {
+  const seed = pokemon?.leechSeed;
+  return !!seed && (currentTurn - seed.turn) % 2 === 1;
+}
+
+// 씨뿌리기 흡수 처리. 반환: { seeded, healer } (healer는 회복할 포켓몬이 없으면 null)
+function drainLeechSeed(seeded, healer) {
+  const amount = Math.min(seeded.hp, Math.max(1, Math.floor((seeded.maxHp ?? seeded.hp) * LEECH_SEED_RATIO)));
+  const newSeeded = { ...seeded, hp: seeded.hp - amount };
+  if (!healer || healer.hp <= 0) return { seeded: newSeeded, healer: null };
+  const maxHp = healer.maxHp ?? healer.hp;
+  const heal = Math.min(maxHp - healer.hp, amount);
+  return { seeded: newSeeded, healer: heal > 0 ? { ...healer, hp: healer.hp + heal } : null };
+}
+
 // 지옥찌르기: 맞은 다음 라운드부터 2라운드간 소리 기술 사용 불가. throatChop: { startTurn, expireTurn }
 const THROAT_CHOP_TURNS = 2;
 const SOUND_MOVES = new Set([
@@ -300,7 +328,7 @@ export function isMoveLocked(pokemon, moveName, currentTurn) {
 function targetsOpponent(moveData) {
   if (moveData.power > 0) return true;
   if (moveData.effect?.status || moveData.effect?.volatile) return true;
-  if (moveData.taunt || moveData.roar) return true;
+  if (moveData.taunt || moveData.roar || moveData.leechSeed) return true;
   const rank = moveData.rank ?? {};
   return !!(rank.targetAtk || rank.targetDef || rank.targetSpd);
 }
@@ -434,6 +462,21 @@ function buildTurnAdvanceUpdate(room, entries, activeIdx, currentTurn, log, even
     const n = pkmn.name ?? "포켓몬";
     log.push(`${n}${josa(n, "은는")} 아쿠아링으로 체력을 회복했다!`);
     events.push({ logIndex: log.length - 1, type: "heal", side, hp: pkmn.hp + heal });
+  }
+
+  // 씨뿌리기: 2라운드에 한 번 씨가 심어진 포켓몬의 체력을 빼앗아 심은 쪽 포켓몬이 회복
+  for (const side of ["p1", "p2"]) {
+    const pkmn = entries[side][activeIdx[side]];
+    if (!pkmn || pkmn.hp <= 0 || !leechSeedDrainsNow(pkmn, currentTurn)) continue;
+    const healerSide = pkmn.leechSeed.side;
+    const drain = drainLeechSeed(pkmn, entries[healerSide][activeIdx[healerSide]]);
+    entries[side][activeIdx[side]] = drain.seeded;
+    log.push("씨뿌리기가 상대방의 체력을 빼앗는다!");
+    events.push({ logIndex: log.length - 1, type: "hit", side, hp: drain.seeded.hp, status: drain.seeded.status ?? null, hasAttacker: false });
+    if (drain.healer) {
+      entries[healerSide][activeIdx[healerSide]] = drain.healer;
+      events.push({ logIndex: log.length - 1, type: "heal", side: healerSide, hp: drain.healer.hp });
+    }
   }
 
   // 회오리불꽃류: 갇혀 있는 동안 라운드 종료마다 데미지, 마지막 라운드 종료 시 풀려남
@@ -700,15 +743,18 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
   const diving = attacker.ghostDive ?? null;
   if (diving) moveIdx = diving.moveIdx;
 
+  // 파괴광선 반동 라운드: 어떤 버튼을 눌렀든 행동하지 못함 (PP 소모 없음)
+  const recharging = isRecharging(attacker, currentTurn);
+
   const moveSlot = attacker.moves?.[moveIdx];
   if (!moveSlot) return fail("기술 없음");
-  if (!diving && (moveSlot.pp ?? 0) <= 0) return fail("PP 없음"); // PP 없으면 사용 불가
+  if (!diving && !recharging && (moveSlot.pp ?? 0) <= 0) return fail("PP 없음"); // PP 없으면 사용 불가
 
   const moveData = MOVES[moveSlot.name];
   if (!moveData) return fail(`moves.js에 "${moveSlot.name}" 기술이 정의되어 있지 않음`);
 
   // 거대해머류(heavyHammer): 사용한 다음 라운드에는 같은 기술을 쓸 수 없음
-  if (!diving && isMoveLocked(attacker, moveSlot.name, currentTurn)) {
+  if (!diving && !recharging && isMoveLocked(attacker, moveSlot.name, currentTurn)) {
     if (isThroatChopped(attacker, currentTurn) && SOUND_MOVES.has(moveSlot.name)) {
       return fail(`지옥찌르기 효과로 ${moveSlot.name}은(는) 사용할 수 없음`);
     }
@@ -719,14 +765,14 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
 
   // 유턴: 공격과 교체가 한 세트. 교체할 수 있는 벤치가 있으면 교체 대상을 함께 받아야 함.
   const myBenchAlive = entries[myKey].some((p, i) => i !== activeIdx[myKey] && p && p.hp > 0);
-  if (moveData.uTurn && myBenchAlive) {
+  if (moveData.uTurn && myBenchAlive && !recharging) {
     const t = entries[myKey][uTurnIdx];
     if (!Number.isInteger(uTurnIdx) || uTurnIdx === activeIdx[myKey] || !t || t.hp <= 0) return fail("유턴 교체 대상이 올바르지 않음");
   }
 
   // PP 소모. 충전 효과는 이번 행동으로 끝 (위력 판정은 행동 전 상태인 attacker로 함)
   const newMoves = [...attacker.moves];
-  if (!diving) newMoves[moveIdx] = { ...moveSlot, pp: moveSlot.pp - 1 };
+  if (!diving && !recharging) newMoves[moveIdx] = { ...moveSlot, pp: moveSlot.pp - 1 };
   let currentAttacker = { ...attacker, moves: newMoves, charge: null };
   entries[myKey][activeIdx[myKey]] = currentAttacker;
 
@@ -745,23 +791,31 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
   let moveMissed = false; // 이번 기술이 빗나갔는지 (명중 실패/회피/사라진 상대) - 분함의발구르기용
   const defGuard = activeGuard(defender);
 
-  // 기술을 고른 뒤에야 얼음/마비/혼란으로 인한 행동 저지를 판정 (버튼은 항상 활성화된 상태로 유지)
-  const gate = checkActionPrevented(currentAttacker);
-  currentAttacker = gate.pokemon;
-  let blocked = !gate.canAct;
-  if (gate.message) log.push(gate.message);
-  // 얼음이 풀리는 등 상태이상이 바뀌었으면 그 줄에서 바로 [상태] 표시를 갱신
-  if (gate.message && (gate.pokemon.status ?? null) !== (attacker.status ?? null)) {
-    events.push({ logIndex: log.length - 1, type: "status", side: myKey, status: gate.pokemon.status ?? null });
-  }
+  let blocked = false;
+  if (recharging) {
+    // 파괴광선 반동: 얼음/마비/혼란 판정 없이 이번 행동을 날림
+    currentAttacker = { ...currentAttacker, recharge: null };
+    blocked = true;
+    log.push(rechargeMessage(currentAttacker.name ?? "포켓몬"));
+  } else {
+    // 기술을 고른 뒤에야 얼음/마비/혼란으로 인한 행동 저지를 판정 (버튼은 항상 활성화된 상태로 유지)
+    const gate = checkActionPrevented(currentAttacker);
+    currentAttacker = gate.pokemon;
+    blocked = !gate.canAct;
+    if (gate.message) log.push(gate.message);
+    // 얼음이 풀리는 등 상태이상이 바뀌었으면 그 줄에서 바로 [상태] 표시를 갱신
+    if (gate.message && (gate.pokemon.status ?? null) !== (attacker.status ?? null)) {
+      events.push({ logIndex: log.length - 1, type: "status", side: myKey, status: gate.pokemon.status ?? null });
+    }
 
-  if (gate.canAct && currentAttacker.volatiles?.["혼란"]) {
-    const confusion = checkConfusionInterrupt(currentAttacker);
-    currentAttacker = confusion.pokemon;
-    if (confusion.message) log.push(confusion.message);
-    if (confusion.confused) {
-      blocked = true;
-      events.push({ logIndex: log.length - 1, type: "hit", side: myKey, hp: currentAttacker.hp, status: currentAttacker.status ?? null, hasAttacker: false });
+    if (gate.canAct && currentAttacker.volatiles?.["혼란"]) {
+      const confusion = checkConfusionInterrupt(currentAttacker);
+      currentAttacker = confusion.pokemon;
+      if (confusion.message) log.push(confusion.message);
+      if (confusion.confused) {
+        blocked = true;
+        events.push({ logIndex: log.length - 1, type: "hit", side: myKey, hp: currentAttacker.hp, status: currentAttacker.status ?? null, hasAttacker: false });
+      }
     }
   }
 
@@ -1210,6 +1264,16 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
           }
         }
 
+        // 씨뿌리기: 이미 씨가 심어져 있으면 실패
+        if (moveData.leechSeed) {
+          if (updatedDefender.leechSeed) {
+            log.push("그러나 실패했다!");
+          } else {
+            updatedDefender = { ...updatedDefender, leechSeed: { side: myKey, turn: currentTurn } };
+            log.push(`${defenderName}의 몸에 씨를 심었다!`);
+          }
+        }
+
         entries[oppKey][activeIdx[oppKey]] = updatedDefender;
 
         // 랭크 변화. moves.js의 rank: { atk?, def?, spd?, targetAtk?, targetDef?, targetSpd?, turns, chance? }
@@ -1343,6 +1407,12 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
     if (cur.lastDamageTaken) entries[myKey][activeIdx[myKey]] = { ...cur, lastDamageTaken: 0 };
   }
 
+  // 파괴광선류: 맞혔을 때만 다음 라운드 반동 (빗나감/방어/타입 무효면 반동 없음)
+  if (moveData.hyperBeam && moveConnected && entries[myKey][activeIdx[myKey]].hp > 0) {
+    const cur = entries[myKey][activeIdx[myKey]];
+    entries[myKey][activeIdx[myKey]] = { ...cur, recharge: { turn: currentTurn + 1 } };
+  }
+
   // 상대의 방어류: 이번 행동으로 막지 않았으면(피격되지 않았으면) 사라짐
   expireUnusedGuard(entries, activeIdx, oppKey, log);
 
@@ -1392,10 +1462,10 @@ function crashDamage(pokemon) {
   };
 }
 
-// 교체로 들어가는 포켓몬에게서 해제되는 상태 (방어류/빛의장막·리플렉터/신비의부적/연속자르기 누적/방어류 연속 사용 기록/도발/카운터용 피격 데미지/회오리불꽃류/아쿠아링/지옥찌르기/빗나감 기록/충전/혼란·풀죽음)
+// 교체로 들어가는 포켓몬에게서 해제되는 상태 (방어류/빛의장막·리플렉터/신비의부적/연속자르기 누적/방어류 연속 사용 기록/도발/카운터용 피격 데미지/회오리불꽃류/아쿠아링/지옥찌르기/빗나감 기록/충전/파괴광선 반동/씨뿌리기/혼란·풀죽음)
 function clearOnSwitchOut(pokemon) {
   const { "혼란": _confusion, "풀죽음": _flinch, ...volatiles } = pokemon.volatiles ?? {};
-  return { ...pokemon, guard: null, guardStreak: false, screen: null, amulet: null, furyCutter: 0, taunt: null, lastDamageTaken: 0, trap: null, aquaRing: false, throatChop: null, missedRound: null, charge: null, volatiles };
+  return { ...pokemon, guard: null, guardStreak: false, screen: null, amulet: null, furyCutter: 0, taunt: null, lastDamageTaken: 0, trap: null, aquaRing: false, throatChop: null, missedRound: null, charge: null, recharge: null, leechSeed: null, volatiles };
 }
 
 // 교체 공통 처리(자발적 교체/강제 교체/유턴): 나가는 포켓몬 상태 정리 -> 내보내기 로그/연출 -> 장판 적용.
@@ -1452,6 +1522,7 @@ export function switchPokemon(room, myKey, targetIdx) {
   if (!pendingSwitch && myArr[activeIdx[myKey]]?.ghostDive) return fail("사라진 상태(고스트다이브/구멍파기)에서는 교체 불가");
   const trap = myArr[activeIdx[myKey]]?.trap;
   if (!pendingSwitch && trap) return fail(`${trap.name}에 갇혀 있어 교체 불가`);
+  if (!pendingSwitch && isRecharging(myArr[activeIdx[myKey]], room.round_no ?? 1)) return fail("반동으로 움직일 수 없어 교체 불가");
 
   const update = {};
   const log = [...(room.battle_log ?? [])];
@@ -1560,6 +1631,10 @@ export {
   diveMessage,
   bodyPressRawDamage,
   isCharged,
+  isRecharging,
+  rechargeMessage,
+  leechSeedDrainsNow,
+  drainLeechSeed,
   AQUA_RING_HEAL_RATIO,
   THROAT_CHOP_TURNS,
   TRI_ATTACK_STATUSES,

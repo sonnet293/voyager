@@ -67,6 +67,10 @@ import {
   diveMessage,
   bodyPressRawDamage,
   isCharged,
+  isRecharging,
+  rechargeMessage,
+  leechSeedDrainsNow,
+  drainLeechSeed,
   AQUA_RING_HEAL_RATIO,
   THROAT_CHOP_TURNS,
   TRI_ATTACK_STATUSES,
@@ -79,7 +83,7 @@ import {
   TAUNT_TURNS,
 } from "./engine.js";
 
-export { pickCount, isMoveLocked };
+export { pickCount, isMoveLocked, isRecharging };
 
 // 범위 기술(aoe/aoeEnemy)의 최종 데미지 배율
 export const SPREAD_MULT = 0.75;
@@ -401,6 +405,22 @@ function endRound(c) {
     pushHeal(c, k, pkmn.hp + heal);
   }
 
+  // 씨뿌리기: 심은 플레이어 자리에 나와 있는 포켓몬이 회복 (그 자리가 비어 있으면 빼앗기만 함)
+  for (const k of DOUBLE_SIDES) {
+    if (!live(k)) continue;
+    const pkmn = active(c, k);
+    if (!leechSeedDrainsNow(pkmn, turn)) continue;
+    const healerKey = pkmn.leechSeed.side;
+    const drain = drainLeechSeed(pkmn, live(healerKey) ? active(c, healerKey) : null);
+    setActive(c, k, drain.seeded);
+    c.log.push("씨뿌리기가 상대방의 체력을 빼앗는다!");
+    pushHit(c, k, drain.seeded, false);
+    if (drain.healer) {
+      setActive(c, healerKey, drain.healer);
+      pushHeal(c, healerKey, drain.healer.hp);
+    }
+  }
+
   // 회오리불꽃류
   for (const k of DOUBLE_SIDES) {
     if (!live(k)) continue;
@@ -599,6 +619,8 @@ function computeTargets(c, myKey, moveData, chosen) {
   if (moveData.aoe) return [...enemies, allyOf(myKey)].filter((k) => inBattle(c, k));
   if (moveData.aoeEnemy) return enemies;
   if (!needsTarget(moveData)) return [];
+  // 씨뿌리기는 아군도 고를 수 있음
+  if (moveData.leechSeed && chosen === allyOf(myKey) && inBattle(c, chosen)) return [chosen];
   if (enemies.includes(chosen)) return [chosen];
   return enemies.slice(0, 1);
 }
@@ -791,6 +813,15 @@ function hitOne(c, myKey, t, moveSlot, moveData, s) {
     }
   }
 
+  if (moveData.leechSeed) {
+    if (updated.leechSeed) {
+      c.log.push("그러나 실패했다!");
+    } else {
+      updated = { ...updated, leechSeed: { side: myKey, turn: c.turn } };
+      c.log.push(`${dn}의 몸에 씨를 심었다!`);
+    }
+  }
+
   setActive(c, t, updated);
 
   // 상대 랭크 변화 (대상마다 따로 확률 판정)
@@ -968,15 +999,17 @@ export function useMove(room, myKey, moveIdx, targetKey = null, uTurnIdx = null)
 
   const diving = attacker.ghostDive ?? null;
   if (diving) moveIdx = diving.moveIdx;
+  // 파괴광선 반동 라운드: 어떤 버튼을 눌렀든 행동하지 못함 (PP 소모 없음)
+  const recharging = isRecharging(attacker, c.turn);
 
   const moveSlot = attacker.moves?.[moveIdx];
   if (!moveSlot) return fail("기술 없음");
-  if (!diving && (moveSlot.pp ?? 0) <= 0) return fail("PP 없음");
+  if (!diving && !recharging && (moveSlot.pp ?? 0) <= 0) return fail("PP 없음");
 
   const moveData = MOVES[moveSlot.name];
   if (!moveData) return fail(`moves.js에 "${moveSlot.name}" 기술이 정의되어 있지 않음`);
 
-  if (!diving && isMoveLocked(attacker, moveSlot.name, c.turn)) {
+  if (!diving && !recharging && isMoveLocked(attacker, moveSlot.name, c.turn)) {
     if (isThroatChopped(attacker, c.turn) && SOUND_MOVES.has(moveSlot.name)) {
       return fail(`지옥찌르기 효과로 ${moveSlot.name}은(는) 사용할 수 없음`);
     }
@@ -986,7 +1019,7 @@ export function useMove(room, myKey, moveIdx, targetKey = null, uTurnIdx = null)
   }
 
   const myBenchAlive = hasAliveBench(c, myKey);
-  if (moveData.uTurn && myBenchAlive) {
+  if (moveData.uTurn && myBenchAlive && !recharging) {
     const t = c.entries[myKey][uTurnIdx];
     if (!Number.isInteger(uTurnIdx) || uTurnIdx === c.activeIdx[myKey] || !t || t.hp <= 0) return fail("유턴 교체 대상이 올바르지 않음");
   }
@@ -1001,7 +1034,7 @@ export function useMove(room, myKey, moveIdx, targetKey = null, uTurnIdx = null)
   // PP 소모 + 방어류/충전은 자신의 다음 행동이 오면 풀림 (충전 위력 판정은 행동 전 상태로)
   const charged = isCharged(attacker, moveData, c.turn);
   const newMoves = [...attacker.moves];
-  if (!diving) newMoves[moveIdx] = { ...moveSlot, pp: moveSlot.pp - 1 };
+  if (!diving && !recharging) newMoves[moveIdx] = { ...moveSlot, pp: moveSlot.pp - 1 };
   let cur = { ...attacker, moves: newMoves, guard: null, charge: null };
   setActive(c, myKey, cur);
 
@@ -1011,20 +1044,28 @@ export function useMove(room, myKey, moveIdx, targetKey = null, uTurnIdx = null)
   let connected = false;
   let targets = [];
 
-  const gate = checkActionPrevented(cur);
-  cur = gate.pokemon;
-  let blocked = !gate.canAct;
-  if (gate.message) c.log.push(gate.message);
-  if (gate.message && (gate.pokemon.status ?? null) !== (attacker.status ?? null)) {
-    c.events.push({ logIndex: c.log.length - 1, type: "status", side: myKey, status: gate.pokemon.status ?? null });
-  }
-  if (gate.canAct && cur.volatiles?.["혼란"]) {
-    const confusion = checkConfusionInterrupt(cur);
-    cur = confusion.pokemon;
-    if (confusion.message) c.log.push(confusion.message);
-    if (confusion.confused) {
-      blocked = true;
-      pushHit(c, myKey, cur, false);
+  let blocked = false;
+  if (recharging) {
+    // 파괴광선 반동: 얼음/마비/혼란 판정 없이 이번 행동을 날림
+    cur = { ...cur, recharge: null };
+    blocked = true;
+    c.log.push(rechargeMessage(pname(cur)));
+  } else {
+    const gate = checkActionPrevented(cur);
+    cur = gate.pokemon;
+    blocked = !gate.canAct;
+    if (gate.message) c.log.push(gate.message);
+    if (gate.message && (gate.pokemon.status ?? null) !== (attacker.status ?? null)) {
+      c.events.push({ logIndex: c.log.length - 1, type: "status", side: myKey, status: gate.pokemon.status ?? null });
+    }
+    if (gate.canAct && cur.volatiles?.["혼란"]) {
+      const confusion = checkConfusionInterrupt(cur);
+      cur = confusion.pokemon;
+      if (confusion.message) c.log.push(confusion.message);
+      if (confusion.confused) {
+        blocked = true;
+        pushHit(c, myKey, cur, false);
+      }
     }
   }
 
@@ -1161,6 +1202,10 @@ export function useMove(room, myKey, moveIdx, targetKey = null, uTurnIdx = null)
   if (moveData.counter && !blocked && active(c, myKey).lastDamageTaken) {
     setActive(c, myKey, { ...active(c, myKey), lastDamageTaken: 0 });
   }
+  // 파괴광선류: 맞힌 대상이 있을 때만 다음 라운드 반동
+  if (moveData.hyperBeam && connected && active(c, myKey).hp > 0) {
+    setActive(c, myKey, { ...active(c, myKey), recharge: { turn: c.turn + 1 } });
+  }
 
   // 유턴: 맞힌 대상이 있을 때만 곧바로 교체
   if (moveData.uTurn && connected && myBenchAlive && Number.isInteger(uTurnIdx) && active(c, myKey).hp > 0) {
@@ -1200,6 +1245,7 @@ export function autoAct(room, myKey, prefer = null) {
   const timeoutRoom = { ...room, battle_log: [...(room.battle_log ?? []), `${displayName(myKey, room)}의 시간이 초과되었다!`] };
 
   if (me.ghostDive) return useMove(timeoutRoom, myKey, me.ghostDive.moveIdx);
+  if (isRecharging(me, c.turn)) return useMove(timeoutRoom, myKey, 0);
 
   const usable = (me.moves ?? [])
     .map((m, i) => (m && (m.pp ?? 0) > 0 && MOVES[m.name] && !isMoveLocked(me, m.name, c.turn) ? i : -1))
@@ -1236,6 +1282,7 @@ export function switchPokemon(room, myKey, targetIdx) {
   if (!pending && targetIdx === c.activeIdx[myKey]) return fail("이미 출전 중");
   if (!pending && cur?.ghostDive) return fail("사라진 상태(고스트다이브/구멍파기)에서는 교체 불가");
   if (!pending && cur?.trap) return fail(`${cur.trap.name}에 갇혀 있어 교체 불가`);
+  if (!pending && isRecharging(cur, c.turn)) return fail("반동으로 움직일 수 없어 교체 불가");
 
   if (pending) c.pending[myKey] = false;
   switchIn(c, myKey, targetIdx, !pending);
