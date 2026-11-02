@@ -71,6 +71,9 @@ import {
   rechargeMessage,
   leechSeedDrainsNow,
   drainLeechSeed,
+  eruptionPower,
+  applyRoost,
+  roostEndMessage,
   AQUA_RING_HEAL_RATIO,
   THROAT_CHOP_TURNS,
   TRI_ATTACK_STATUSES,
@@ -441,7 +444,7 @@ function endRound(c) {
     setActive(c, k, updated);
   }
 
-  // 빛의장막/리플렉터, 도발, 지옥찌르기 만료
+  // 빛의장막/리플렉터, 도발, 지옥찌르기, 날개쉬기 만료
   for (const k of DOUBLE_SIDES) {
     if (!live(k)) continue;
     let pkmn = active(c, k);
@@ -457,6 +460,10 @@ function endRound(c) {
     if (pkmn.throatChop && turn >= pkmn.throatChop.expireTurn) {
       c.log.push(`${n}${josa(n, "은는")} 다시 소리 기술을 쓸 수 있게 되었다!`);
       pkmn = { ...pkmn, throatChop: null };
+    }
+    if (pkmn.roost && turn >= pkmn.roost.expireTurn) {
+      c.log.push(roostEndMessage(n));
+      pkmn = { ...pkmn, roost: null };
     }
     setActive(c, k, pkmn);
   }
@@ -709,6 +716,7 @@ function hitOne(c, myKey, t, moveSlot, moveData, s) {
   if (isDamaging) {
     let power = moveData.power;
     if (moveData.avalanche && attacker.lastHitRound === c.turn) power = 70;
+    if (moveData.eruption) power = eruptionPower(power, attacker);
     if (moveData.venomShock && defender.status === "독") power = Math.round(power * VENOM_SHOCK_MULT);
     if (moveData.stomping && attacker.missedRound === c.turn - 1) power = Math.round(power * CONDITIONAL_POWER_MULT);
     if (moveData.guts && GUTS_STATUSES.includes(attacker.status)) power = Math.round(power * CONDITIONAL_POWER_MULT);
@@ -1171,6 +1179,11 @@ export function useMove(room, myKey, moveIdx, targetKey = null, uTurnIdx = null)
       } else {
         c.log.push(`그러나 ${n}의 체력은 가득 차 있다!`);
       }
+    }
+    if (moveData.effect.removeFlying) {
+      const roost = applyRoost(active(c, myKey), c.turn);
+      setActive(c, myKey, roost.pokemon);
+      if (roost.message) c.log.push(roost.message);
     }
   } else if (moveData.counter && !cur.lastDamageTaken) {
     c.log.push(`${attackerName}의 ${moveSlot.name}!`);

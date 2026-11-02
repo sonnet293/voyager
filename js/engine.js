@@ -3,7 +3,7 @@
 // GM 브라우저(gm/gm.js)만 이 파일로 판정하고, 플레이어 브라우저는 요청(actions)만 생성한다.
 // 모든 함수는 room 스냅샷을 받아 { ok: true, update } 또는 { ok: false, reason }을 돌려준다.
 import { MOVES } from "./moves.js";
-import { getTypeMultiplier, pokemonTypes } from "./typeChart.js";
+import { getTypeMultiplier, pokemonTypes, originalTypes } from "./typeChart.js";
 import {
   applyStatus,
   applyVolatile,
@@ -232,6 +232,29 @@ function isCharged(attacker, moveData, currentTurn) {
 
 // 아쿠아링: 라운드 종료마다 최대 체력 x 비율 회복
 const AQUA_RING_HEAL_RATIO = 1 / 16;
+
+// 분화(eruption): 위력 x 남은 HP/최대 HP (소수점 버림, 최소 1)
+function eruptionPower(power, attacker) {
+  const maxHp = attacker.maxHp ?? attacker.hp;
+  return Math.max(1, Math.floor((power * attacker.hp) / maxHp));
+}
+
+// 날개쉬기(effect.removeFlying): 비행 타입이 있으면 사용한 라운드 포함 ROOST_TURNS 라운드간 비행 타입이 사라짐. roost: { expireTurn }
+const ROOST_TURNS = 3;
+
+// 반환: { pokemon, message } (비행 타입이 없으면 message는 null)
+function applyRoost(pokemon, currentTurn) {
+  if (!originalTypes(pokemon).includes("비행")) return { pokemon, message: null };
+  const n = pokemon.name ?? "포켓몬";
+  return {
+    pokemon: { ...pokemon, roost: { expireTurn: currentTurn + ROOST_TURNS - 1 } },
+    message: `${n}의 비행 타입이 사라졌다!`,
+  };
+}
+
+function roostEndMessage(name) {
+  return `${name}의 비행 타입이 돌아왔다!`;
+}
 
 // 파괴광선류(hyperBeam): 맞히면 다음 라운드엔 반동으로 행동 불가. recharge: { turn: 행동할 수 없는 라운드 }
 function isRecharging(pokemon, currentTurn) {
@@ -532,6 +555,14 @@ function buildTurnAdvanceUpdate(room, entries, activeIdx, currentTurn, log, even
     entries[side][activeIdx[side]] = { ...pkmn, throatChop: null };
     const n = pkmn.name ?? "포켓몬";
     log.push(`${n}${josa(n, "은는")} 다시 소리 기술을 쓸 수 있게 되었다!`);
+  }
+
+  // 날개쉬기 만료: 마지막 라운드 종료 시 비행 타입 복구
+  for (const side of ["p1", "p2"]) {
+    const pkmn = entries[side][activeIdx[side]];
+    if (!pkmn?.roost || currentTurn < pkmn.roost.expireTurn) continue;
+    entries[side][activeIdx[side]] = { ...pkmn, roost: null };
+    if (pkmn.hp > 0) log.push(roostEndMessage(pkmn.name ?? "포켓몬"));
   }
 
   // 랭크 만료: 마지막 라운드 종료 시 원래대로
@@ -947,6 +978,12 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
     } else {
       log.push(`그러나 ${attackerName}의 체력은 가득 차 있다!`);
     }
+    if (moveData.effect.removeFlying) {
+      const roost = applyRoost(currentAttacker, currentTurn);
+      currentAttacker = roost.pokemon;
+      entries[myKey][activeIdx[myKey]] = currentAttacker;
+      if (roost.message) log.push(roost.message);
+    }
   } else if (moveData.counter && !currentAttacker.lastDamageTaken) {
     // 카운터: 아직 상대에게 피격당하지 않았으면(받은 데미지가 없으면) 실패
     const attackerName = currentAttacker.name ?? "포켓몬";
@@ -1060,6 +1097,8 @@ export function useMove(room, myKey, moveIdx, uTurnIdx = null) {
           // 눈사태: 이번 라운드에 상대의 공격 기술(위력>0)에 맞았으면 위력 70
           let power = moveData.power;
           if (moveData.avalanche && attacker.lastHitRound === currentTurn) power = 70;
+          // 분화: HP가 적을수록 위력 감소
+          if (moveData.eruption) power = eruptionPower(power, attacker);
           // 베놈쇼크: 상대가 독 상태면 위력 1.5배
           if (moveData.venomShock && defender.status === "독") power = Math.round(power * VENOM_SHOCK_MULT);
           // 분함의발구르기: 직전 라운드에 쓴 기술이 빗나갔으면 위력 1.5배
@@ -1464,10 +1503,10 @@ function crashDamage(pokemon) {
   };
 }
 
-// 교체로 들어가는 포켓몬에게서 해제되는 상태 (방어류/빛의장막·리플렉터/신비의부적/연속자르기 누적/방어류 연속 사용 기록/도발/카운터용 피격 데미지/회오리불꽃류/아쿠아링/지옥찌르기/빗나감 기록/충전/파괴광선 반동/씨뿌리기/혼란·풀죽음)
+// 교체로 들어가는 포켓몬에게서 해제되는 상태 (방어류/빛의장막·리플렉터/신비의부적/연속자르기 누적/방어류 연속 사용 기록/도발/카운터용 피격 데미지/회오리불꽃류/아쿠아링/지옥찌르기/빗나감 기록/충전/파괴광선 반동/씨뿌리기/날개쉬기/혼란·풀죽음)
 function clearOnSwitchOut(pokemon) {
   const { "혼란": _confusion, "풀죽음": _flinch, ...volatiles } = pokemon.volatiles ?? {};
-  return { ...pokemon, guard: null, guardStreak: false, screen: null, amulet: null, furyCutter: 0, taunt: null, lastDamageTaken: 0, trap: null, aquaRing: false, throatChop: null, missedRound: null, charge: null, recharge: null, leechSeed: null, volatiles };
+  return { ...pokemon, guard: null, guardStreak: false, screen: null, amulet: null, furyCutter: 0, taunt: null, lastDamageTaken: 0, trap: null, aquaRing: false, throatChop: null, missedRound: null, charge: null, recharge: null, leechSeed: null, roost: null, volatiles };
 }
 
 // 교체 공통 처리(자발적 교체/강제 교체/유턴): 나가는 포켓몬 상태 정리 -> 내보내기 로그/연출 -> 장판 적용.
@@ -1637,6 +1676,9 @@ export {
   rechargeMessage,
   leechSeedDrainsNow,
   drainLeechSeed,
+  eruptionPower,
+  applyRoost,
+  roostEndMessage,
   AQUA_RING_HEAL_RATIO,
   THROAT_CHOP_TURNS,
   TRI_ATTACK_STATUSES,
